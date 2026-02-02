@@ -9,6 +9,27 @@
 
 set -e
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Style constants - consistent formatting across all output
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Box drawing characters
+LINE_HEAVY="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+LINE_DOUBLE="═══════════════════════════════════════════════════"
+
+# Status indicators
+ICON_SUCCESS="✅"
+ICON_FAILURE="❌"
+ICON_PROGRESS="⏳"
+ICON_BLOCKED="⛔"
+ICON_RETRY="🔄"
+ICON_TASK="🎯"
+ICON_WARN="⚠️"
+ICON_CELEBRATE="🎉"
+ICON_INFO="ℹ️"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+
 PRD_FILE="prd.json"
 LOG_FILE=".claude/implement-loop.log"
 LOCK_FILE=".claude/implement-loop.lock"
@@ -21,22 +42,22 @@ log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 # Initialize log file
 mkdir -p "$(dirname "$LOG_FILE")"
 echo "" >> "$LOG_FILE"
-log "═══════════════════════════════════════════════"
+log "$LINE_DOUBLE"
 
 # Verify prd.json exists
 if [ ! -f "$PRD_FILE" ]; then
-  log "ERROR: $PRD_FILE not found. Run /issue N first."
+  log "$ICON_FAILURE prd.json not found. Run /issue N first to create a plan."
   exit 1
 fi
 
 # Acquire lock to prevent concurrent executions
 exec 200>"$LOCK_FILE"
 if ! flock -n 200; then
-  log "ERROR: Another implement-loop process is already running."
-  log "       If this is unexpected, remove $LOCK_FILE and try again."
+  log "$ICON_BLOCKED Another loop is already running."
+  log "   If this is unexpected, remove $LOCK_FILE and try again."
   exit 1
 fi
-log "Lock acquired on $LOCK_FILE"
+log "$ICON_INFO Lock acquired"
 
 # Cleanup function to release lock on exit
 cleanup() {
@@ -48,11 +69,14 @@ trap cleanup EXIT
 ISSUE_NUMBER=$(jq -r '.issueNumber' "$PRD_FILE")
 BRANCH=$(jq -r '.branchName' "$PRD_FILE")
 
-log "Implementation Loop Starting"
-log "   Issue: #$ISSUE_NUMBER"
-log "   Branch: $BRANCH"
-log "   Max iterations: $MAX_ITERATIONS"
-log "═══════════════════════════════════════════════"
+log ""
+log "$ICON_TASK Implementation Loop Starting"
+log ""
+log "   Issue:      #$ISSUE_NUMBER"
+log "   Branch:     $BRANCH"
+log "   Max runs:   $MAX_ITERATIONS"
+log ""
+log "$LINE_DOUBLE"
 
 # Ensure on correct branch
 git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH"
@@ -65,9 +89,11 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
   if [ "$REMAINING" -eq 0 ]; then
     log ""
-    log "ALL TASKS PASSING"
+    log "$LINE_HEAVY"
+    log "$ICON_CELEBRATE All tasks passing!"
+    log "$LINE_HEAVY"
     log ""
-    log "Run 'claude' and invoke /implement to enter testing checkpoint."
+    log "Run 'claude' and use /implement to enter testing checkpoint."
     # Update prd.json to signal testing phase
     jq '.debugState.status = "testing"' "$PRD_FILE" > tmp.$$.json && mv tmp.$$.json "$PRD_FILE"
     git add "$PRD_FILE"
@@ -95,7 +121,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   ' "$PRD_FILE")
 
   if [ -z "$NEXT_TASK" ] || [ "$NEXT_TASK" = "null" ]; then
-    log "No executable tasks (dependencies not met or all blocked)"
+    log "$ICON_BLOCKED No executable tasks - dependencies not met or all blocked"
     exit 1
   fi
 
@@ -103,10 +129,16 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   TASK_ATTEMPTS=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .attempts // 0' "$PRD_FILE")
 
   log ""
-  log "━━━ Iteration $ITERATION: $NEXT_TASK - $TASK_TITLE (attempt $((TASK_ATTEMPTS + 1))) ━━━"
+  log "$LINE_HEAVY"
+  log "$ICON_TASK Task: $NEXT_TASK - $TASK_TITLE"
+  log "$LINE_HEAVY"
+  log ""
+  log "   Status:   $ICON_PROGRESS Attempt $((TASK_ATTEMPTS + 1))"
+  log "   Iteration: $ITERATION of $MAX_ITERATIONS"
+  log ""
 
   # Gather context for Claude
-  log "Gathering context..."
+  log "Gathering context for Claude..."
 
   # 1. Get full task details from prd.json
   TASK_JSON=$(jq --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id)' "$PRD_FILE")
@@ -174,7 +206,7 @@ If verification FAILS:
 CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</result>, or <result>BLOCKED</result> as the final line of your response."
 
   # Run Claude for this task
-  log "Running claude --print for task $NEXT_TASK..."
+  log "Running Claude on $NEXT_TASK..."
 
   # Proper error handling - capture exit code separately
   set +e  # Temporarily allow errors
@@ -184,8 +216,8 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
 
   # Check for execution failure
   if [ $CLAUDE_EXIT -ne 0 ] && [ -z "$OUTPUT" ]; then
-    log "ERROR: Claude failed to execute (exit code: $CLAUDE_EXIT)"
-    log "       Check that 'claude' CLI is installed and configured."
+    log "$ICON_FAILURE Claude failed to execute (exit code: $CLAUDE_EXIT)"
+    log "   Check that 'claude' CLI is installed and configured."
     exit 1
   fi
 
@@ -199,20 +231,33 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
 
   # Check result
   if [ "$RESULT" = "PASS" ]; then
-    log "✅ $NEXT_TASK passed"
+    log ""
+    log "$LINE_HEAVY"
+    log "$ICON_SUCCESS $NEXT_TASK passed! Moving to next task..."
+    log "$LINE_HEAVY"
   elif [ "$RESULT" = "BLOCKED" ]; then
-    log "⛔ $NEXT_TASK blocked after max attempts"
+    log ""
+    log "$LINE_HEAVY"
+    log "$ICON_BLOCKED $NEXT_TASK blocked after 3 attempts"
+    log "$LINE_HEAVY"
+    log ""
+    log "Human input needed. Add guidance to the issue, then run /implement."
     gh issue edit "$ISSUE_NUMBER" --add-label "AI: Blocked" 2>/dev/null || true
     exit 1
   elif [ "$RESULT" = "RETRY" ]; then
-    log "🔄 $NEXT_TASK failed, will retry..."
+    log ""
+    log "$ICON_RETRY $NEXT_TASK failed verification, retrying..."
     # Don't increment iteration for retries within same task
   else
-    log "⚠️ No valid result tag found in output (got: '$RESULT'), assuming retry needed"
+    log ""
+    log "$ICON_WARN No valid result tag found (got: '$RESULT'), retrying..."
     log "Last 10 lines of output:"
     echo "$OUTPUT" | tail -10 | while read line; do log "  $line"; done
   fi
 done
 
-log "⚠️ Max iterations ($MAX_ITERATIONS) reached"
+log ""
+log "$LINE_HEAVY"
+log "$ICON_WARN Max iterations ($MAX_ITERATIONS) reached"
+log "$LINE_HEAVY"
 exit 1
