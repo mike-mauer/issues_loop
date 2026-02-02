@@ -1,40 +1,67 @@
 {
-  "project": "enhance-issue-command",
-  "issueNumber": 3,
-  "branchName": "ai/issue-3-enhance-issue-command",
-  "description": "Enhance /issue command: post plan to GitHub + structured plan format",
-  "generatedAt": "2026-02-01T00:00:00Z",
+  "project": "ui-improvements",
+  "issueNumber": 4,
+  "branchName": "ai/issue-4-ui-improvements",
+  "description": "Make UI in Claude Code and bash script more user friendly",
+  "generatedAt": "2026-02-02T00:00:00Z",
   "status": "approved",
   "userStories": [
     {
       "id": "US-001",
       "phase": 1,
       "priority": 1,
-      "title": "Add Required Plan Format section to planning-guide.md",
-      "description": "Add a new section at the top of planning-guide.md (after the intro, before 'The Ralph Pattern') that defines the required markdown format for plans written during plan mode. This format must be parseable for transformation to prd.json.",
+      "title": "Create style guide constants in implement-loop.sh",
+      "description": "Add style constants at the top of the bash script for consistent formatting: colors (if terminal supports), box drawing characters, status indicators. Update the log output to use these constants and improve the messaging to be clearer and friendlier.",
       "files": [
-        ".claude/rules/planning-guide.md"
+        ".claude/scripts/implement-loop.sh"
       ],
       "dependsOn": [],
       "acceptanceCriteria": [
-        "planning-guide.md contains '## Required Plan Format for Plan Mode' section",
-        "Section includes complete markdown template with all required fields",
-        "Template shows Priority, Files, Depends On, Description, Acceptance Criteria, Verify Commands for each task"
+        "Script has style constants section at top",
+        "Log messages use consistent formatting",
+        "Status messages are clear (not cryptic)",
+        "Progress is easy to follow visually"
       ],
       "verifyCommands": [
-        "grep -q '## Required Plan Format' .claude/rules/planning-guide.md",
-        "grep -q '### US-' .claude/rules/planning-guide.md"
+        "grep -q 'Style constants' .claude/scripts/implement-loop.sh",
+        "head -50 .claude/scripts/implement-loop.sh | grep -q '═══'"
       ],
       "passes": true,
       "attempts": 1,
-      "lastAttempt": "2026-02-01T00:00:00Z"
+      "lastAttempt": "2026-02-02T16:57:15Z"
     },
     {
       "id": "US-002",
       "phase": 1,
       "priority": 2,
-      "title": "Restructure Step 4 in issue.md with explicit sub-steps",
-      "description": "Rewrite Step 4 (Planning Phase) in issue.md to have explicit sub-steps 4a-4f, adding new steps for posting plan to GitHub (4b) and transforming plan to prd.json (4d).",
+      "title": "Update implement.md output formatting",
+      "description": "Update the output examples in implement.md to match the new style. Ensure task displays, progress indicators, and status messages are consistent with the bash script. Make copy friendlier (avoid robotic language).",
+      "files": [
+        ".claude/commands/implement.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "acceptanceCriteria": [
+        "Output examples use consistent box drawing",
+        "Status messages match bash script style",
+        "Copy is professional and friendly",
+        "Progress indicators are clear"
+      ],
+      "verifyCommands": [
+        "grep -q '━━━' .claude/commands/implement.md",
+        "grep -c '🎯\\|✅\\|❌\\|⏳' .claude/commands/implement.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    },
+    {
+      "id": "US-003",
+      "phase": 1,
+      "priority": 3,
+      "title": "Update issue.md output formatting",
+      "description": "Update the issue summary displays, scoping output, and plan approval formatting in issue.md. Ensure consistency with implement.md and the bash script style.",
       "files": [
         ".claude/commands/issue.md"
       ],
@@ -42,32 +69,50 @@
         "US-001"
       ],
       "acceptanceCriteria": [
-        "Step 4 has sub-steps 4a through 4f",
-        "Step 4a references planning-guide.md for required format",
-        "Step 4b includes 'gh issue comment' command to post plan",
-        "Step 4d includes field mapping table (plan field → prd.json field)",
-        "Step 4e posts '## ✅ Plan Approved' comment"
+        "Issue summary display uses consistent style",
+        "Scoping output is clear and inviting",
+        "Plan approval flow has friendly copy"
       ],
       "verifyCommands": [
-        "grep -q '#### 4a:' .claude/commands/issue.md",
-        "grep -q '#### 4b:' .claude/commands/issue.md",
-        "grep -q '#### 4c:' .claude/commands/issue.md",
-        "grep -q '#### 4d:' .claude/commands/issue.md",
-        "grep -q '#### 4e:' .claude/commands/issue.md",
-        "grep -q '#### 4f:' .claude/commands/issue.md",
-        "grep -q 'gh issue comment' .claude/commands/issue.md"
+        "grep -q '━━━' .claude/commands/issue.md"
       ],
-      "passes": true,
-      "attempts": 1,
-      "lastAttempt": "2026-02-01T00:00:00Z"
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    },
+    {
+      "id": "US-004",
+      "phase": 1,
+      "priority": 4,
+      "title": "Update issue-close.md output formatting",
+      "description": "Update the final report display and PR creation messaging in issue-close.md. Ensure the completion experience feels celebratory and professional.",
+      "files": [
+        ".claude/commands/issue-close.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "acceptanceCriteria": [
+        "Final report display uses consistent style",
+        "Completion messages are celebratory but professional",
+        "PR creation output is clear"
+      ],
+      "verifyCommands": [
+        "grep -q '━━━' .claude/commands/issue-close.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
     }
   ],
   "globalVerifyCommands": [
-    "grep -q '## Required Plan Format' .claude/rules/planning-guide.md",
-    "grep -q '#### 4f:' .claude/commands/issue.md"
+    "grep -q '━━━' .claude/scripts/implement-loop.sh",
+    "grep -q '━━━' .claude/commands/implement.md",
+    "grep -q '━━━' .claude/commands/issue.md",
+    "grep -q '━━━' .claude/commands/issue-close.md"
   ],
   "debugState": {
-    "status": "testing",
+    "status": "pending",
     "debugAttempts": 0,
     "debugHistory": []
   }
