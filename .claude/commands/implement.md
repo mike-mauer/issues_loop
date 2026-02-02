@@ -1,7 +1,15 @@
 # /implement - Execute Task Loop (Ralph Pattern)
 
 ## Description
-Executes the implementation loop following the Ralph pattern. Each invocation is a **fresh context** that:
+Executes the implementation loop following the Ralph pattern. **By default, launches a background loop** that autonomously executes all tasks until complete or blocked.
+
+The loop script (`.claude/scripts/implement-loop.sh`) provides:
+- Fresh context per task (calls Claude CLI for each)
+- Automatic retries (up to 3 attempts per task)
+- Task logs posted to GitHub issue
+- Stops on completion or blocker
+
+For each task, the loop:
 1. Reads `prd.json` for task status
 2. Picks the next task where `passes: false`
 3. Implements the task
@@ -11,17 +19,37 @@ Executes the implementation loop following the Ralph pattern. Each invocation is
 
 ## Usage
 ```
-/implement              # Execute next failing task
-/implement start        # Start from beginning (creates branch)
-/implement task US-003  # Jump to specific task
-/implement loop         # Launch background loop (autonomous)
+/implement              # Launch background loop (DEFAULT - autonomous)
+/implement start        # Create branch + start background loop
+/implement single       # Execute ONE task interactively (not loop)
+/implement task US-003  # Jump to specific task (interactive)
 /implement verify       # Re-run verification for current task
 ```
+
+**Default behavior is loop mode** - launches `.claude/scripts/implement-loop.sh` in background for autonomous task execution. Use `/implement single` if you need interactive mode for debugging.
 
 ## Prerequisites
 - Issue loaded (`/issue {number}`)
 - Plan approved (`/plan approve`)
 - `prd.json` exists in repo root
+
+---
+
+## Argument Handling
+
+Parse `$ARGUMENTS` to determine mode:
+
+| Argument | Mode | Action |
+|----------|------|--------|
+| (none) | **Loop (default)** | Launch background script |
+| `start` | Loop + branch | Create branch, then launch background script |
+| `single` | Interactive | Execute ONE task in conversation |
+| `task US-XXX` | Interactive | Jump to specific task |
+| `loop` | Loop | Same as default (explicit) |
+| `verify` | Verify | Re-run verification commands |
+
+**If no argument or `loop` or `start`:** Skip to "Loop Mode" section.
+**If `single` or `task`:** Follow "Interactive Mode" section.
 
 ---
 
