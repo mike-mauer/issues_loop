@@ -421,12 +421,14 @@ echo $LOOP_PID > .claude/implement-loop.pid
 
 Output:
 ```
-🔄 Implementation loop started in background (PID: $LOOP_PID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 Implementation loop started (PID: $LOOP_PID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-The loop will execute tasks autonomously until:
-- All tasks pass → enters testing checkpoint
-- A task is blocked → stops, adds AI: Blocked label
-- Max iterations reached → stops
+The loop runs in the background until:
+  ✅ All tasks pass → testing checkpoint
+  ⛔ A task is blocked → needs your input
+  ⚠️  Max iterations → safety stop
 
 Monitor progress:
   tail -f .claude/implement-loop.log
@@ -434,7 +436,8 @@ Monitor progress:
 Stop the loop:
   kill $(cat .claude/implement-loop.pid)
 
-When complete, run /implement to continue with testing checkpoint.
+When done, run /implement to continue.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ### Step 3: User Returns Later
@@ -458,44 +461,32 @@ The script `.claude/scripts/implement-loop.sh`:
    - Posts task log to GitHub issue
 4. Exits when: all pass, blocked, or max iterations
 
-### Previous Interactive Loop Mode (Reference)
+### Log Output Example
 
-The previous interactive version showed output like:
+The background loop writes output like this to `.claude/implement-loop.log`:
+
 ```
-🔄 Loop Mode: Auto-continuing until complete or blocked
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 Task: US-001 - Create user schema
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-━━━ Task US-001 ━━━
-[implementation...]
-✅ Passed (attempt 1)
+   Status:   ⏳ Attempt 1
+   Iteration: 1 of 20
 
-━━━ Task US-002 ━━━
-[implementation...]
-✅ Passed (attempt 1)
-
-━━━ Task US-003 ━━━
-[implementation...]
-❌ Failed (attempt 1)
-🔁 Retrying...
-[implementation...]
-✅ Passed (attempt 2)
-
-━━━ Task US-004 ━━━
-[implementation...]
-❌ Failed (attempt 1)
-❌ Failed (attempt 2)
-❌ Failed (attempt 3)
-⛔ Max attempts reached - human review needed
+Gathering context for Claude...
+Running Claude on US-001...
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Loop paused: US-004 failed after 3 attempts
+✅ US-001 passed! Moving to next task...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Progress: 3/6 tasks passing
-Blocked: 1 task needs human review
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 Task: US-002 - Implement JWT utilities
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Run `/implement` after reviewing US-004 failure logs.
+   Status:   ⏳ Attempt 1
+   ...
 ```
-
-Now this happens autonomously in the background script.
 
 ---
 
@@ -542,11 +533,13 @@ The fresh context approach means no state is lost - everything is in git and Git
 
 When ALL tasks pass:
 ```
-🎉 ALL TASKS PASSING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎉 All tasks passing!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Progress: 6/6 tasks complete
 
-Entering testing checkpoint...
+Let's verify everything works as expected...
 ```
 
 ---
@@ -605,23 +598,27 @@ git push
 
 Output:
 ```
-✅ Testing Verified
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Testing verified!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Implementation confirmed working by user.
+Great news - implementation confirmed working.
 
 Run /issue close to:
-- Generate comprehensive summary
-- Create Pull Request
-- Prepare for merge
+  📊 Generate summary report
+  🔀 Create Pull Request
+  🚀 Prepare for merge
 ```
 
 #### If "Need more time":
 ```
-⏸️  Testing Paused
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⏸️  Testing paused
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Take your time testing. When ready:
-- Run /implement to resume the testing checkpoint
-- Or run /issue close --force to skip testing
+Take your time. When ready:
+  /implement     → Resume testing checkpoint
+  /issue close --force → Skip testing (not recommended)
 ```
 
 Update prd.json:
@@ -803,12 +800,14 @@ jq '.debugState.status = "blocked"' prd.json > prd.json.tmp && mv prd.json.tmp p
 
 Output:
 ```
-⛔ Debug Blocked
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⛔ Debug blocked
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-After 3 attempts, unable to resolve the reported issue.
-See debug notes in issue comments.
+After 3 attempts, unable to resolve the issue.
+See debug notes in the issue comments.
 
-Human investigation needed. Add guidance to the issue, then run /implement.
+Your help needed - add guidance to the issue, then run /implement.
 ```
 
 ---
@@ -855,9 +854,11 @@ When debug flow is active, prd.json includes:
 When `/implement` is run and `debugState.status` is `testing`:
 
 ```
-🔄 Resuming Testing Checkpoint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 Resuming testing checkpoint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-All tasks are passing. Returning to testing verification...
+All tasks are passing. Let's verify everything works...
 ```
 
 Then proceed directly to Testing Checkpoint Step 3 (AskUserQuestion).
