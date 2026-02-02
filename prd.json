@@ -12,7 +12,9 @@
       "priority": 1,
       "title": "Add Required Plan Format section to planning-guide.md",
       "description": "Add a new section at the top of planning-guide.md (after the intro, before 'The Ralph Pattern') that defines the required markdown format for plans written during plan mode. This format must be parseable for transformation to prd.json.",
-      "files": [".claude/rules/planning-guide.md"],
+      "files": [
+        ".claude/rules/planning-guide.md"
+      ],
       "dependsOn": [],
       "acceptanceCriteria": [
         "planning-guide.md contains '## Required Plan Format for Plan Mode' section",
@@ -23,9 +25,9 @@
         "grep -q '## Required Plan Format' .claude/rules/planning-guide.md",
         "grep -q '### US-' .claude/rules/planning-guide.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-01T00:00:00Z"
     },
     {
       "id": "US-002",
@@ -33,8 +35,12 @@
       "priority": 2,
       "title": "Restructure Step 4 in issue.md with explicit sub-steps",
       "description": "Rewrite Step 4 (Planning Phase) in issue.md to have explicit sub-steps 4a-4f, adding new steps for posting plan to GitHub (4b) and transforming plan to prd.json (4d).",
-      "files": [".claude/commands/issue.md"],
-      "dependsOn": ["US-001"],
+      "files": [
+        ".claude/commands/issue.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
       "acceptanceCriteria": [
         "Step 4 has sub-steps 4a through 4f",
         "Step 4a references planning-guide.md for required format",
