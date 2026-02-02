@@ -57,9 +57,9 @@
         "grep -q '#### 4f:' .claude/commands/issue.md",
         "grep -q 'gh issue comment' .claude/commands/issue.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-01T00:00:00Z"
     }
   ],
   "globalVerifyCommands": [
