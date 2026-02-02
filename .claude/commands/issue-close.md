@@ -439,13 +439,15 @@ When `/issue close preview`:
 - Do NOT create PR
 
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Report Preview
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [Full report content]
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This is a preview. Run /issue close to post and create PR.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ℹ️  This is a preview - nothing posted yet.
+    Run /issue close to post and create PR.
 ```
 
 ---
@@ -458,8 +460,12 @@ When `/issue close --force`:
 - Useful when testing was done manually or outside the workflow
 
 ```
-⚠️  Force mode: Bypassing testing verification
-Proceeding with report generation...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  Force mode
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Bypassing testing verification...
+Proceeding with report generation.
 ```
 
 ---
@@ -479,16 +485,22 @@ Proceeding with report generation...
 ## Output
 
 ```
-✅ Final Report Generated
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎉 Implementation complete!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Report: https://github.com/owner/repo/issues/42#issuecomment-xxx
-PR: https://github.com/owner/repo/pull/57
+✅ Final report posted
+✅ Pull request created
 
-Issue #42 ready for human review.
+📊 Report: https://github.com/owner/repo/issues/42#issuecomment-xxx
+🔀 PR:     https://github.com/owner/repo/pull/57
+
+Issue #42 is ready for review.
 
 Next steps:
-1. Review PR in GitHub
-2. Request changes or approve
-3. Merge when ready
-4. Run /issue close close to finalize
+  1. Review the PR in GitHub
+  2. Request changes or approve
+  3. Merge when ready
+  4. Run /issue close close to finalize
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
