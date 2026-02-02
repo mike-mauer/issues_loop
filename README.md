@@ -163,6 +163,7 @@ tail -f .claude/implement-loop.log
 | Command | Description |
 |---------|-------------|
 | `/issue setup` | **Run first!** Creates labels, templates, verifies setup |
+| `/issue validate` | Check all prerequisites are configured correctly |
 | `/issues` | List all open GitHub issues |
 | `/issue <number>` | **Full flow:** Load → scope → plan → approve (with inline prompts) |
 | `/issue <number> --quick` | Load issue, skip to status check (for returning to in-progress work) |
