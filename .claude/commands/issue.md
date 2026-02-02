@@ -433,18 +433,21 @@ Expected: Login works for any valid email format
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #42: Login fails for emails with + character
-**Completeness:** ████████░░ 9/10
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This issue is well-defined.
+Completeness: ████████░░ 9/10
 
-→ [AskUserQuestion: "Ready to create implementation plan?"]
-→ User: "Yes"
-→ [Enters plan mode, creates plan]
-→ [AskUserQuestion: "Approve this plan?"]
-→ User: "Yes"
-→ [Generates prd.json, posts approval comment]
-→ [AskUserQuestion: "Ready to start implementation?"]
+Looks good! This issue is well-defined.
+
+→ Ready to create an implementation plan?
+→ [User confirms]
+→ [Planning...]
+→ Plan ready - approve?
+→ [User approves]
+→ ✅ prd.json generated
+→ Ready to start implementation?
 ```
 
 ### Vague Issue (Score: 2/10)
@@ -456,17 +459,21 @@ Body: test
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #15: test
-**Completeness:** ██░░░░░░░░ 2/10
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This issue needs more detail. Let me ask a few quick questions...
+Completeness: ██░░░░░░░░ 2/10
 
-→ [AskUserQuestion: What type? Where? Acceptance?]
-→ User answers
+This issue needs a bit more detail. Let me ask a few quick questions...
+
+→ What type of change is this?
+→ Where should this change happen?
+→ How will we know it's done?
 → [Shows scoped requirements summary]
-→ [AskUserQuestion: "Does this capture what you need?"]
-→ User: "Yes"
-→ [Proceeds to planning phase]
+→ Does this capture what you need?
+→ [User confirms]
+→ [Proceeds to planning]
 ```
 
 ### Returning to In-Progress Issue
@@ -477,21 +484,24 @@ This issue needs more detail. Let me ask a few quick questions...
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #42: Login fix
-**State:** In Progress
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### Progress
-- [x] US-001: Add email validation util (passed)
-- [ ] US-002: Update login form (next)
+State: ⏳ In Progress
 
-→ Run `/implement` to continue with US-002
+Progress:
+  ✅ US-001: Add email validation util
+  🎯 US-002: Update login form (next)
+
+Run /implement to continue with US-002
 ```
 
 ---
 
 ## Tips
 
-- Use `/issue 42` for new issues or to re-scope
-- Use `/issue 42 --quick` when returning to an issue already in progress
+- `/issue 42` - Load a new issue or re-scope an existing one
+- `/issue 42 --quick` - Jump straight to status check for in-progress issues
 - The full flow: scope → plan → approve → implement
-- Task logs in comments serve as persistent memory between sessions
+- Task logs in issue comments serve as memory between sessions
