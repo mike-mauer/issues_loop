@@ -4,6 +4,85 @@ This document provides guidance on creating implementation plans that follow the
 
 ---
 
+## Required Plan Format for Plan Mode
+
+When using Claude Code's native plan mode (via `EnterPlanMode`), the plan **must** follow this format to enable automatic transformation to `prd.json`.
+
+### Plan File Structure
+
+```markdown
+# Implementation Plan: Issue #N - {title}
+
+## Overview
+{2-3 sentence approach summary explaining the implementation strategy}
+
+## Tasks
+
+### US-001: {Task title}
+**Priority:** 1
+**Files:** `path/to/file.ts`, `path/to/other.ts`
+**Depends On:** None
+
+**Description:**
+{What to implement in 2-3 sentences. Include specific details about
+what to create/modify and any important context.}
+
+**Acceptance Criteria:**
+- [ ] {Verifiable criterion 1 - must be testable}
+- [ ] {Verifiable criterion 2 - must be testable}
+
+**Verify Commands:**
+```bash
+command1
+command2
+```
+
+---
+
+### US-002: {Next task title}
+**Priority:** 2
+**Files:** `path/to/file.ts`
+**Depends On:** US-001
+
+**Description:**
+{Task description}
+
+**Acceptance Criteria:**
+- [ ] {Criterion}
+
+**Verify Commands:**
+```bash
+command
+```
+```
+
+### Required Fields (per task)
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `### US-XXX: {title}` | Yes | Task ID and title |
+| `**Priority:**` | Yes | Execution order (1 = first) |
+| `**Files:**` | Yes | Files to create/modify |
+| `**Depends On:**` | Yes | Task IDs that must pass first, or "None" |
+| `**Description:**` | Yes | What to implement (2-3 sentences) |
+| `**Acceptance Criteria:**` | Yes | Testable checkboxes |
+| `**Verify Commands:**` | Yes | Bash commands to prove success |
+
+### Field Mapping (Plan → prd.json)
+
+| Plan Markdown | prd.json Field |
+|---------------|----------------|
+| `# Implementation Plan: Issue #N` | `issueNumber: N` |
+| `### US-XXX: {title}` | `userStories[].id`, `userStories[].title` |
+| `**Priority:** N` | `userStories[].priority` |
+| `**Files:** ...` | `userStories[].files` |
+| `**Depends On:** ...` | `userStories[].dependsOn` |
+| `**Description:**` block | `userStories[].description` |
+| `**Acceptance Criteria:**` list | `userStories[].acceptanceCriteria` |
+| `**Verify Commands:**` code block | `userStories[].verifyCommands` |
+
+---
+
 ## The Ralph Pattern
 
 ### Core Principle: Fresh Context Per Task

@@ -203,13 +203,43 @@ Use the `EnterPlanMode` tool to enter Claude Code's native planning mode. This a
 
 During plan mode:
 1. Analyze the codebase for relevant patterns and conventions
-2. Break down the work into small, testable tasks (see `.claude/rules/planning-guide.md`)
+2. Break down the work into small, testable tasks
 3. Define acceptance criteria that can be verified with commands
-4. Write the plan to the designated plan file
+4. **Write the plan following the required format** in `.claude/rules/planning-guide.md` (see "Required Plan Format for Plan Mode" section)
 
-#### 4b: Plan Review and Approval
+**Important:** The plan must follow the structured format to enable automatic transformation to prd.json.
 
-After exiting plan mode, present the plan summary and ask:
+#### 4b: Post Plan to GitHub
+
+After exiting plan mode, post the implementation plan to the GitHub issue:
+
+```bash
+# Post implementation plan as comment
+gh issue comment $ISSUE_NUMBER --body "$(cat <<'EOF'
+## 📋 Implementation Plan
+
+**Issue:** #$ISSUE_NUMBER - {title}
+**Generated:** $(date +%Y-%m-%d)
+**Status:** Draft
+**Complexity:** {Low/Medium/High} ({N} tasks)
+
+---
+
+{Plan content from plan file - Overview and Tasks sections}
+
+---
+
+*React with 👍 to approve this plan, or comment with requested changes.*
+EOF
+)"
+
+# Update label to AI: Planning
+gh issue edit $ISSUE_NUMBER --add-label "AI: Planning"
+```
+
+#### 4c: Plan Review and Approval
+
+Present the plan summary and ask for approval:
 
 ```
 Question: "Approve this implementation plan?"
@@ -219,48 +249,75 @@ Options:
   3. "Start over" - Discard and re-plan
 ```
 
-#### 4c: Generate prd.json (on approval)
+#### 4d: Transform Plan to prd.json (on approval)
 
-Create `prd.json` in repo root with the task structure:
+Parse the structured plan and generate `prd.json`. Use this field mapping:
+
+| Plan Markdown | prd.json Field |
+|---------------|----------------|
+| `# Implementation Plan: Issue #N` | `issueNumber: N` |
+| `### US-XXX: {title}` | `userStories[].id`, `userStories[].title` |
+| `**Priority:** N` | `userStories[].priority` |
+| `**Files:** ...` | `userStories[].files` |
+| `**Depends On:** ...` | `userStories[].dependsOn` |
+| `**Description:**` block | `userStories[].description` |
+| `**Acceptance Criteria:**` list | `userStories[].acceptanceCriteria` |
+| `**Verify Commands:**` code block | `userStories[].verifyCommands` |
+
+Create `prd.json` in repo root:
 
 ```json
 {
+  "project": "{slug-from-title}",
   "issueNumber": 42,
   "branchName": "ai/issue-42-{slug}",
+  "description": "{issue title}",
+  "generatedAt": "{ISO timestamp}",
+  "status": "approved",
   "userStories": [
     {
       "id": "US-001",
+      "phase": 1,
+      "priority": 1,
       "title": "Task title",
       "description": "What to implement",
+      "files": ["path/to/file.ts"],
+      "dependsOn": [],
       "acceptanceCriteria": ["Testable criterion"],
       "verifyCommands": ["npm run test"],
       "passes": false,
-      "attempts": 0
+      "attempts": 0,
+      "lastAttempt": null
     }
-  ]
+  ],
+  "globalVerifyCommands": []
 }
 ```
 
-Then:
+Then commit:
 ```bash
 git add prd.json
 git commit -m "chore: add prd.json for issue #$ISSUE_NUMBER"
 ```
 
-#### 4d: Post Approval Comment
+#### 4e: Post Approval Comment
 
-Post to GitHub issue:
-```markdown
+Post approval confirmation to GitHub issue:
+
+```bash
+gh issue comment $ISSUE_NUMBER --body "$(cat <<'EOF'
 ## ✅ Plan Approved
 
 **prd.json generated** with {N} testable tasks.
 
-Task Status:
+Implementation ready. Run `/implement` to begin the loop.
+
+### Task Status:
 - [ ] US-001: {title}
 - [ ] US-002: {title}
 ...
-
-Run `/implement` to begin.
+EOF
+)"
 ```
 
 Update labels:
@@ -268,7 +325,10 @@ Update labels:
 gh issue edit $ISSUE_NUMBER --remove-label "AI: Planning" --add-label "AI: Approved"
 ```
 
-Then prompt:
+#### 4f: Prompt for Implementation
+
+Ask if user is ready to begin:
+
 ```
 Question: "Ready to start implementation?"
 Options:
@@ -373,18 +433,21 @@ Expected: Login works for any valid email format
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #42: Login fails for emails with + character
-**Completeness:** ████████░░ 9/10
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This issue is well-defined.
+Completeness: ████████░░ 9/10
 
-→ [AskUserQuestion: "Ready to create implementation plan?"]
-→ User: "Yes"
-→ [Enters plan mode, creates plan]
-→ [AskUserQuestion: "Approve this plan?"]
-→ User: "Yes"
-→ [Generates prd.json, posts approval comment]
-→ [AskUserQuestion: "Ready to start implementation?"]
+Looks good! This issue is well-defined.
+
+→ Ready to create an implementation plan?
+→ [User confirms]
+→ [Planning...]
+→ Plan ready - approve?
+→ [User approves]
+→ ✅ prd.json generated
+→ Ready to start implementation?
 ```
 
 ### Vague Issue (Score: 2/10)
@@ -396,17 +459,21 @@ Body: test
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #15: test
-**Completeness:** ██░░░░░░░░ 2/10
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This issue needs more detail. Let me ask a few quick questions...
+Completeness: ██░░░░░░░░ 2/10
 
-→ [AskUserQuestion: What type? Where? Acceptance?]
-→ User answers
+This issue needs a bit more detail. Let me ask a few quick questions...
+
+→ What type of change is this?
+→ Where should this change happen?
+→ How will we know it's done?
 → [Shows scoped requirements summary]
-→ [AskUserQuestion: "Does this capture what you need?"]
-→ User: "Yes"
-→ [Proceeds to planning phase]
+→ Does this capture what you need?
+→ [User confirms]
+→ [Proceeds to planning]
 ```
 
 ### Returning to In-Progress Issue
@@ -417,21 +484,24 @@ This issue needs more detail. Let me ask a few quick questions...
 
 Flow:
 ```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 Issue #42: Login fix
-**State:** In Progress
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### Progress
-- [x] US-001: Add email validation util (passed)
-- [ ] US-002: Update login form (next)
+State: ⏳ In Progress
 
-→ Run `/implement` to continue with US-002
+Progress:
+  ✅ US-001: Add email validation util
+  🎯 US-002: Update login form (next)
+
+Run /implement to continue with US-002
 ```
 
 ---
 
 ## Tips
 
-- Use `/issue 42` for new issues or to re-scope
-- Use `/issue 42 --quick` when returning to an issue already in progress
+- `/issue 42` - Load a new issue or re-scope an existing one
+- `/issue 42 --quick` - Jump straight to status check for in-progress issues
 - The full flow: scope → plan → approve → implement
-- Task logs in comments serve as persistent memory between sessions
+- Task logs in issue comments serve as memory between sessions
