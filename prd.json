@@ -65,5 +65,10 @@
   "globalVerifyCommands": [
     "grep -q '## Required Plan Format' .claude/rules/planning-guide.md",
     "grep -q '#### 4f:' .claude/commands/issue.md"
-  ]
+  ],
+  "debugState": {
+    "status": "testing",
+    "debugAttempts": 0,
+    "debugHistory": []
+  }
 }
