@@ -1,0 +1,11 @@
+# This directory stores archived implementation records.
+# Each completed issue creates a subdirectory:
+#   archive/YYYY-MM-DD-issue-N-slug/
+#     - prd.json          (task state snapshot)
+#     - issue-comments.md (GitHub comments export)
+#     - SUMMARY.md        (human-readable summary)
+#
+# These archives provide:
+# - Historical record of implementation decisions
+# - Reference for similar future issues
+# - Audit trail for completed work

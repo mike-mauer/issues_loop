@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Configuration for the GitHub Issue Loop workflow (Ralph Pattern)",
+  "branchPrefix": "ai/issue-",
+  "prdLocation": "prd.json",
+  "archiveLocation": "archive/",
+  "maxTaskAttempts": 3,
+  "maxDebugAttempts": 3,
+  "labels": {
+    "trigger": "AI",
+    "planning": "AI: Planning",
+    "approved": "AI: Approved",
+    "inProgress": "AI: In Progress",
+    "testing": "AI: Testing",
+    "blocked": "AI: Blocked",
+    "review": "AI: Review",
+    "complete": "AI: Complete"
+  },
+  "commentPrefixes": {
+    "plan": "## 📋 Implementation Plan",
+    "approved": "## ✅ Plan Approved",
+    "taskLog": "## 📝 Task Log:",
+    "discovery": "## 🔍 Discovery Note",
+    "patterns": "## 🔍 Codebase Patterns",
+    "testingCheckpoint": "## 🧪 Testing Checkpoint",
+    "debugSession": "## 🔧 Debug Session",
+    "debugFixed": "## ✅ Debug Fix Applied",
+    "debugBlocked": "## 🚫 Debug Blocked",
+    "finalReport": "## 📊 Final Report"
+  },
+  "commitPrefixes": {
+    "task": "feat",
+    "state": "chore",
+    "debug": "fix"
+  }
+}

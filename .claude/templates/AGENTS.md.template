@@ -1,0 +1,59 @@
+# AGENTS.md
+
+> Patterns and context for AI agents working in this directory.
+> Update this file when you discover important patterns.
+
+## Directory Purpose
+
+[Brief description of what this directory contains and its role in the system]
+
+## Key Patterns
+
+### [Pattern Name 1]
+**What:** [Description of the pattern]
+**When:** [When to use this pattern]
+**Example:**
+```
+[Code or usage example]
+```
+
+### [Pattern Name 2]
+**What:** [Description]
+**When:** [When to use]
+**Example:**
+```
+[Code example]
+```
+
+## Gotchas
+
+- **[Issue to avoid]:** [Why and what to do instead]
+- **[Common mistake]:** [Explanation and correct approach]
+
+## File Conventions
+
+| Pattern | Purpose | Example |
+|---------|---------|---------|
+| `*.ts` | [Purpose] | `example.ts` |
+| `*.test.ts` | [Purpose] | `example.test.ts` |
+
+## Related Files
+
+| File | Relationship |
+|------|--------------|
+| `../other/file.ts` | [How it relates to this directory] |
+| `./specific.ts` | [Key file description] |
+
+## Dependencies
+
+- **Internal:** [Other project directories/modules this depends on]
+- **External:** [npm packages, APIs, services]
+
+## Testing Notes
+
+[How to test code in this directory, special setup required, etc.]
+
+---
+
+*Last updated: [DATE] by [human/AI]*
+*Related issue: #[ISSUE_NUMBER]*
