@@ -112,7 +112,7 @@
     "grep -q '━━━' .claude/commands/issue-close.md"
   ],
   "debugState": {
-    "status": "testing",
+    "status": "verified",
     "debugAttempts": 0,
     "debugHistory": []
   }
