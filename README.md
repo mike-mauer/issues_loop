@@ -19,15 +19,15 @@ A complete workflow for AI-assisted development using GitHub Issues as the coord
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      LOCAL FLOW (Claude Code)                        │
 │                                                                      │
-│   4. /issues           5. /plan approve     6. /implement           │
+│   4. /il_list          5. /il_1_plan N      6. /il_2_implement      │
 │   ────────────────  →  ────────────────  →  ────────────────        │
-│   List & select        Review & approve     Execute tasks,          │
-│   issue                plan                 commit each             │
+│   List & select        Scope, plan,         Execute tasks,          │
+│   issue                approve              commit each             │
 │                                                                      │
-│   7. /issue close                                                    │
+│   7. /il_3_close                                                     │
 │   ────────────────                                                   │
 │   Generate report,                                                   │
-│   create PR, close                                                   │
+│   create PR, archive                                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,7 +81,7 @@ cp -r path/to/this/repo/.claude/* your-project/.claude/
 
 After copying files, in Claude Code run:
 ```
-/issue setup
+/il_setup
 ```
 
 This creates all required labels automatically:
@@ -138,41 +138,39 @@ gh issue list --limit 5
 claude
 
 # List all open issues
-/issues
+/il_list
 
 # Load, scope, plan, and approve (guided flow with prompts)
-/issue 42
+/il_1_plan 42
 
-# Start implementation - choose your mode:
-/implement start     # Create branch, run single task
-/implement           # Execute next failing task interactively
-/implement loop      # Run task loop in background (autonomous)
+# Start implementation (creates branch + launches background loop)
+/il_2_implement
 
 # Monitor background loop progress (optional)
 tail -f .claude/implement-loop.log
 
 # When loop completes, continue with testing
-/implement           # Enters testing checkpoint if all tasks pass
+/il_2_implement      # Enters testing checkpoint if all tasks pass
 
 # After user testing verified, generate report and PR
-/issue close
+/il_3_close
 ```
 
 ### Commands Reference
 
 | Command | Description |
 |---------|-------------|
-| `/issue setup` | **Run first!** Creates labels, templates, verifies setup |
-| `/issue validate` | Check all prerequisites are configured correctly |
-| `/issues` | List all open GitHub issues |
-| `/issue <number>` | **Full flow:** Load → scope → plan → approve (with inline prompts) |
-| `/issue <number> --quick` | Load issue, skip to status check (for returning to in-progress work) |
-| `/implement` | Execute next failing task (Ralph Loop) |
-| `/implement start` | Create branch, start from first task |
-| `/implement loop` | Run task loop in background (autonomous) |
-| `/issue close` | Generate final report and create PR |
-| `/issue close --force` | Skip testing verification |
-| `/issue close close` | Generate report, create PR, close issue |
+| `/il_setup` | **Run first!** Creates labels, templates, verifies setup |
+| `/il_validate` | Check all prerequisites are configured correctly |
+| `/il_list` | List all open GitHub issues |
+| `/il_1_plan <number>` | **Step 1:** Load → scope → plan → approve (with inline prompts) |
+| `/il_1_plan <number> --quick` | Load issue, skip to status check (for returning to in-progress work) |
+| `/il_2_implement` | **Step 2:** Create branch + launch background task loop |
+| `/il_2_implement verify` | Re-run verification commands for current task |
+| `/il_2_implement interactive-mode` | ⚠️ Escape hatch - execute in conversation (breaks fresh context) |
+| `/il_3_close` | **Step 3:** Generate report, create PR, auto-archive if merged |
+| `/il_3_close --force` | Skip testing verification |
+| `/il_3_close preview` | Preview report without posting |
 
 ## 📁 File Structure
 
@@ -182,14 +180,18 @@ your-project/
 │   ├── CLAUDE.md              # Your project's main rules (template provided)
 │   ├── rules/
 │   │   ├── github-issue-workflow.md  # Issue workflow rules (Ralph Pattern)
-│   │   └── planning-guide.md         # Planning methodology reference
-│   └── commands/
-│       ├── issue-setup.md     # /issue setup command
-│       ├── issues.md          # /issues command
-│       ├── issue.md           # /issue command (scope + plan + approve)
-│       ├── implement.md       # /implement command (Ralph Loop)
-│       └── issue-close.md     # /issue close command
-├── prd.json                   # Task state (created during /issue approval)
+│   │   ├── planning-guide.md         # Planning methodology reference
+│   │   └── custom-planning-protocol.md # 5-phase planning protocol
+│   ├── commands/
+│   │   ├── il_setup.md        # /il_setup command
+│   │   ├── il_validate.md     # /il_validate command
+│   │   ├── il_list.md         # /il_list command
+│   │   ├── il_1_plan.md       # /il_1_plan command (Step 1: scope + plan + approve)
+│   │   ├── il_2_implement.md  # /il_2_implement command (Step 2: Ralph Loop)
+│   │   └── il_3_close.md      # /il_3_close command (Step 3: report + PR + archive)
+│   └── scripts/
+│       └── implement-loop.sh  # Background task loop script
+├── prd.json                   # Task state (created during plan approval)
 ```
 
 ### Integration with Existing Projects
@@ -204,7 +206,7 @@ See `.claude/rules/github-issue-workflow.md` for workflow rules.
 
 ## 🔍 Issue Scoping
 
-When you load an issue with `/issue N`, it's automatically evaluated for completeness on 5 dimensions:
+When you load an issue with `/il_1_plan N`, it's automatically evaluated for completeness on 5 dimensions:
 
 | Dimension | What's Checked |
 |-----------|----------------|
@@ -218,13 +220,13 @@ Each dimension scores 0-2 points (max 10). Based on score:
 
 | Score | Action |
 |-------|--------|
-| **8-10** | Well-defined → Proceed to `/plan` |
+| **8-10** | Well-defined → Proceed to planning |
 | **5-7** | Minor gaps → Ask 1-2 targeted questions |
 | **0-4** | Needs detail → Ask up to 3 questions |
 
 **Questions are multiple-choice** for quick answers, with "Other" option for custom input.
 
-Use `/issue N --quick` to skip scoping when returning to an issue already in progress.
+Use `/il_1_plan N --quick` to skip scoping when returning to an issue already in progress.
 
 ## 🔄 The Memory System (Ralph Pattern)
 
@@ -263,7 +265,7 @@ After plan approval, `prd.json` tracks testable task state:
 ```
 
 ### Key Concept: Fresh Context Per Iteration
-Each `/implement` execution is a **new session** with no memory. Context comes only from:
+Each `/il_2_implement` execution is a **new session** with no memory. Context comes only from:
 1. `prd.json` - Which tasks pass/fail
 2. GitHub Issue comments - Task logs and learnings
 3. Git history - What code was committed
@@ -291,16 +293,16 @@ All tasks pass → Testing Checkpoint → User tests
                         ↓                ↓                ↓
                     "Works"          "Issue"          "Later"
                         ↓                ↓                ↓
-                 /issue close      Debug Flow         Pause
+                /il_3_close       Debug Flow         Pause
 ```
 
 ### What Happens
 1. **All tasks pass** → Label changes to `AI: Testing`
 2. **Checkpoint posted** → Comment requests manual testing
 3. **User responds** with one of:
-   - **Works** → Proceed to `/issue close`
+   - **Works** → Proceed to `/il_3_close`
    - **Found issue** → Enter debug flow (3 attempts max)
-   - **Need more time** → Pause, resume later with `/implement`
+   - **Need more time** → Pause, resume later with `/il_2_implement`
 
 ### Debug Flow
 When user reports an issue:
@@ -332,7 +334,7 @@ If debug fails 3 times → `AI: Blocked` label, awaiting human guidance.
 ### Task blocked
 - Review the blocker note in the issue
 - Add a comment with guidance
-- Run `/implement` to continue
+- Run `/il_2_implement` to continue
 
 ## 📝 License
 
