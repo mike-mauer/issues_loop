@@ -104,9 +104,9 @@
       "verifyCommands": [
         "grep -r 'Run /issue\\|Run /implement\\|/issues' .claude/commands/ | grep -v 'il_' | wc -l"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T08:00:00Z"
     }
   ],
   "globalVerifyCommands": [
