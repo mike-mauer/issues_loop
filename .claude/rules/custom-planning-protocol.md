@@ -379,12 +379,12 @@ Use `AskUserQuestion`:
 ```
 Question: "prd.json generated. Ready to implement?"
 Options:
-  1. "Yes, run /implement" - Start implementation loop now
+  1. "Yes, run /il_2_implement" - Start implementation loop now
   2. "Not yet" - I'll start later
 ```
 
-**On "Yes":** Suggest running `/implement` or `/implement start`
-**On "Not yet":** End planning, user can return with `/issue N --quick`
+**On "Yes":** Suggest running `/il_2_implement` or `/il_2_implement start`
+**On "Not yet":** End planning, user can return with `/il_1_plan N --quick`
 
 ---
 
@@ -398,13 +398,13 @@ If a session ends during planning:
    - No GitHub comments → Start from Phase 1
    - Plan comment but no approval → Resume at Phase 4 checkpoint
    - Approval comment but no prd.json → Resume at Phase 5
-   - prd.json exists → Planning complete, suggest `/implement`
+   - prd.json exists → Planning complete, suggest `/il_2_implement`
 
 ---
 
-## Integration with /issue Command
+## Integration with /il_1_plan Command
 
-The `/issue` command's Step 4 (Planning Phase) should:
+The `/il_1_plan` command's Step 4 (Planning Phase) should:
 
 1. Reference this protocol: "Follow `.claude/rules/custom-planning-protocol.md`"
 2. Execute phases in order
