@@ -1,0 +1,141 @@
+{
+  "project": "streamline-commands",
+  "issueNumber": 10,
+  "branchName": "ai/issue-10-streamline-commands",
+  "description": "Streamline command system with il_ prefix and sequential numbering",
+  "generatedAt": "2026-02-03T04:55:00Z",
+  "status": "approved",
+  "userStories": [
+    {
+      "id": "US-001",
+      "phase": 1,
+      "priority": 1,
+      "title": "Rename command files with il_ prefix",
+      "description": "Rename all 6 command files to use the il_ prefix with sequential numbering for core workflow. Non-sequential commands get descriptive names without numbers.",
+      "files": [
+        ".claude/commands/*.md"
+      ],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "All 6 files renamed with il_ prefix",
+        "Core workflow files have sequential numbers (1, 2, 3)",
+        "Non-core files have descriptive names without numbers"
+      ],
+      "verifyCommands": [
+        "ls .claude/commands/il_*.md | wc -l",
+        "ls .claude/commands/il_[123]_*.md | wc -l"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T04:56:00Z"
+    },
+    {
+      "id": "US-002",
+      "phase": 1,
+      "priority": 2,
+      "title": "Update command headers and descriptions",
+      "description": "Update the # header and ## Description in each renamed file to reflect the new command names. Update Usage sections with new command syntax.",
+      "files": [
+        ".claude/commands/il_*.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "acceptanceCriteria": [
+        "Each file's # header matches its new command name",
+        "Usage sections show new command syntax",
+        "Descriptions reference new command names"
+      ],
+      "verifyCommands": [
+        "grep '^# /il_' .claude/commands/il_*.md | wc -l"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T05:00:00Z"
+    },
+    {
+      "id": "US-003",
+      "phase": 1,
+      "priority": 3,
+      "title": "Consolidate close close into il_3_close",
+      "description": "Merge the 'close close' functionality into a single command. After PR merge, /il_3_close should detect merged state and automatically archive without requiring a second invocation.",
+      "files": [
+        ".claude/commands/il_3_close.md"
+      ],
+      "dependsOn": [
+        "US-002"
+      ],
+      "acceptanceCriteria": [
+        "No 'close close' syntax exists in documentation",
+        "Single /il_3_close command handles both report+PR and archive",
+        "Command detects PR merged state and archives automatically"
+      ],
+      "verifyCommands": [
+        "grep -c 'close close' .claude/commands/il_3_close.md || echo 0",
+        "grep -c 'PR.*merged\\|merged.*PR\\|mergedAt' .claude/commands/il_3_close.md"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T06:10:00Z"
+    },
+    {
+      "id": "US-004",
+      "phase": 1,
+      "priority": 4,
+      "title": "Update all documentation references",
+      "description": "Search and replace all references to old command names in documentation files. Update examples and workflow descriptions.",
+      "files": [
+        "CLAUDE.md",
+        ".claude/CLAUDE.md",
+        ".claude/rules/*.md"
+      ],
+      "dependsOn": [
+        "US-002"
+      ],
+      "acceptanceCriteria": [
+        "No references to /issue, /implement, /issues in docs (except in historical context)",
+        "All references use new il_ naming",
+        "Workflow examples use sequential numbering"
+      ],
+      "verifyCommands": [
+        "grep -r '/issue\\|/implement' CLAUDE.md .claude/ --include='*.md' | grep -v 'il_' | grep -v 'archive/' | wc -l"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T07:00:00Z"
+    },
+    {
+      "id": "US-005",
+      "phase": 1,
+      "priority": 5,
+      "title": "Update cross-references between commands",
+      "description": "Update any references within command files that point to other commands. Ensure 'Run /il_2_implement' replaces 'Run /implement', etc.",
+      "files": [
+        ".claude/commands/il_*.md"
+      ],
+      "dependsOn": [
+        "US-004"
+      ],
+      "acceptanceCriteria": [
+        "All internal command references use il_ naming",
+        "Suggested next steps use correct new names",
+        "No orphaned references to old command names"
+      ],
+      "verifyCommands": [
+        "grep -r 'Run /issue\\|Run /implement\\|/issues' .claude/commands/ | grep -v 'il_' | wc -l"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-03T08:00:00Z"
+    }
+  ],
+  "globalVerifyCommands": [
+    "ls .claude/commands/il_*.md | wc -l",
+    "grep -r '/issue\\|/implement' .claude/commands/ | grep -v 'il_' | wc -l"
+  ],
+  "debugState": {
+    "status": "verified",
+    "debugAttempts": 0,
+    "debugHistory": []
+  }
+}
