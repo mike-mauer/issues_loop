@@ -19,12 +19,13 @@ For each task, the loop:
 
 ## Usage
 ```
-/implement              # Launch background loop (DEFAULT)
-/implement start        # Create branch + start background loop
+/implement              # Create branch if needed + launch background loop
 /implement verify       # Re-run verification for current task
 ```
 
-**There is only one mode: Loop Mode.** This command launches `.claude/scripts/implement-loop.sh` which executes tasks with fresh context per task.
+**There is only one mode: Loop Mode.** This command:
+1. Creates the branch from `prd.json` if it doesn't exist
+2. Launches `.claude/scripts/implement-loop.sh` for fresh context per task
 
 ### ⚠️ Escape Hatch (Breaks Fresh Context)
 ```
@@ -77,8 +78,7 @@ If you complete a task without posting to GitHub, the task is NOT complete. Go b
 
 | Argument | Action | Go To |
 |----------|--------|-------|
-| (none) | **Launch background script** | → "Loop Mode" section |
-| `start` | Create branch, then launch script | → "Loop Mode" section |
+| (none) | Create branch if needed + launch script | → "Loop Mode" section |
 | `verify` | Re-run verification commands only | → "Step 5: Run Verification" |
 | `interactive-mode` | ⚠️ ESCAPE HATCH - breaks fresh context | → "Interactive Mode" section |
 
@@ -177,11 +177,31 @@ This command is designed to work **without memory** of previous runs. Context co
 
 ## Loop Mode (DEFAULT - Check This First)
 
-**If you are running `/implement` with no arguments, `loop`, or `start`, you MUST follow this section.**
+**If you are running `/implement` with no arguments, you MUST follow this section.**
 
 You MUST launch the background script. Do NOT execute tasks interactively.
 
-### Step L1: Verify Script Exists
+### Step L1: Create Branch If Needed
+
+```bash
+# Read branch name from prd.json
+BRANCH=$(jq -r '.branchName' prd.json)
+
+# Check if branch exists locally or on remote
+if ! git show-ref --verify --quiet "refs/heads/$BRANCH" && \
+   ! git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
+  # Create and checkout branch
+  git checkout -b "$BRANCH"
+  git push -u origin "$BRANCH"
+  echo "✅ Created branch: $BRANCH"
+else
+  # Switch to existing branch
+  git checkout "$BRANCH"
+  echo "✅ On branch: $BRANCH"
+fi
+```
+
+### Step L2: Verify Script Exists
 
 ```bash
 if [ ! -f .claude/scripts/implement-loop.sh ]; then
@@ -191,7 +211,7 @@ if [ ! -f .claude/scripts/implement-loop.sh ]; then
 fi
 ```
 
-### Step L2: Launch Background Script
+### Step L3: Launch Background Script
 
 ```bash
 # Make script executable if needed
@@ -203,7 +223,7 @@ LOOP_PID=$!
 echo $LOOP_PID > .claude/implement-loop.pid
 ```
 
-### Step L3: Inform User and STOP
+### Step L4: Inform User and STOP
 
 Output this message and then STOP (do not continue to Implementation Loop):
 
