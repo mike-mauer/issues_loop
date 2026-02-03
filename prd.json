@@ -111,5 +111,10 @@
     "grep -c 'CRITICAL REQUIREMENTS' .claude/commands/implement.md",
     "grep -c 'POST-TASK CHECKLIST' .claude/commands/implement.md",
     "grep -c 'MUST' .claude/commands/implement.md"
-  ]
+  ],
+  "debugState": {
+    "status": "testing",
+    "debugAttempts": 0,
+    "debugHistory": []
+  }
 }
