@@ -152,7 +152,7 @@ Repository:
 
 Configuration:
   ❌ .issueloop.config.json not found
-     Run: /issue setup to create configuration
+     Run: /il_setup to create configuration
 
 Labels:
   ✅ AI
@@ -165,7 +165,7 @@ Labels:
   ✅ AI: Complete
 
 ============================
-❌ 3 issues found. Run /issue setup to fix label issues.
+❌ 3 issues found. Run /il_setup to fix label issues.
 ```
 
 ## Error Handling
@@ -178,9 +178,9 @@ Labels:
 | gh not authed | Not logged in | `gh auth login` |
 | Not a git repo | Wrong directory | Navigate to your project |
 | No GitHub remote | Remote not configured | `git remote add origin <url>` |
-| Config missing | Not initialized | Run `/issue setup` |
+| Config missing | Not initialized | Run `/il_setup` |
 | Config invalid | Bad JSON | Check syntax in config file |
-| Labels missing | Not created | Run `/issue setup` |
+| Labels missing | Not created | Run `/il_setup` |
 
 ## Implementation Notes
 

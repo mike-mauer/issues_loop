@@ -233,11 +233,11 @@ Labels:
 
 Files:
   ✅ .claude/rules/github-issue-workflow.md
-  ✅ .claude/commands/issues.md
-  ✅ .claude/commands/issue.md
+  ✅ .claude/commands/il_list.md
+  ✅ .claude/commands/il_1_plan.md
   ✅ .claude/commands/plan.md
-  ✅ .claude/commands/implement.md
-  ✅ .claude/commands/issue-close.md
+  ✅ .claude/commands/il_2_implement.md
+  ✅ .claude/commands/il_3_close.md
   ⚠️  .github/ISSUE_TEMPLATE/ai_request.md (missing - optional)
 
 =====================================
@@ -261,7 +261,7 @@ If setup partially fails, user can run individual fixes:
 
 ```bash
 # Re-run just labels
-/issue setup --labels
+/il_setup --labels
 
 # Manual label creation
 gh label create "AI" --color "7057ff" --force

@@ -430,7 +430,7 @@ Progress:
   ✅ US-001: Add email validation util
   🎯 US-002: Update login form (next)
 
-Run /implement to continue with US-002
+Run /il_2_implement to continue with US-002
 ```
 
 ---

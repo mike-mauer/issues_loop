@@ -116,7 +116,7 @@ git remote get-url origin 2>/dev/null | grep -q github || { echo "❌ No GitHub 
 which jq || { echo "❌ jq not found. Install with: brew install jq"; exit 1; }
 
 # 6. Check prd.json exists
-[ -f prd.json ] || { echo "❌ prd.json not found. Run /issue N first to create a plan."; exit 1; }
+[ -f prd.json ] || { echo "❌ prd.json not found. Run /il_1_plan N first to create a plan."; exit 1; }
 ```
 
 If any prerequisite fails, stop and inform the user how to fix it.
@@ -749,7 +749,7 @@ Output:
 
 Great news - implementation confirmed working.
 
-Run /issue close to:
+Run /il_3_close to:
   📊 Generate summary report
   🔀 Create Pull Request
   🚀 Prepare for merge

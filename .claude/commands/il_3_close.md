@@ -71,7 +71,7 @@ if [ "$DEBUG_STATUS" != "verified" ] && [ "$FORCE" != "true" ]; then
   echo "Current status: $DEBUG_STATUS"
   echo ""
   echo "Options:"
-  echo "  1. Run /implement to go through the testing checkpoint"
+  echo "  1. Run /il_2_implement to go through the testing checkpoint"
   echo "  2. Use /issue close --force to bypass (not recommended)"
   exit 1
 fi
@@ -488,7 +488,7 @@ When `/issue close preview`:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ℹ️  This is a preview - nothing posted yet.
-    Run /issue close to post and create PR.
+    Run /il_3_close to post and create PR.
 ```
 
 ---
@@ -515,7 +515,7 @@ Proceeding with report generation.
 
 | Error | Response |
 |-------|----------|
-| Testing not verified | "Testing not complete. Run /implement or use --force" |
+| Testing not verified | "Testing not complete. Run /il_2_implement or use --force" |
 | Tasks still failing | "Complete implementation first. X tasks failing." |
 | Not on feature branch | "Checkout the implementation branch first." |
 | Uncommitted changes | "Commit or stash changes first." |
