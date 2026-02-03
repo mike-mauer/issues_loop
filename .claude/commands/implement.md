@@ -35,21 +35,32 @@ For each task, the loop:
 
 ---
 
-## Argument Handling
+## ⚠️ MODE SELECTION - READ THIS FIRST
 
-Parse `$ARGUMENTS` to determine mode:
+**You MUST launch the background script** unless the user explicitly specified `single` or `task US-XXX`.
 
-| Argument | Mode | Action |
-|----------|------|--------|
-| (none) | **Loop (default)** | Launch background script |
-| `start` | Loop + branch | Create branch, then launch background script |
-| `single` | Interactive | Execute ONE task in conversation |
-| `task US-XXX` | Interactive | Jump to specific task |
-| `loop` | Loop | Same as default (explicit) |
-| `verify` | Verify | Re-run verification commands |
+### Argument Check (Do This Immediately)
 
-**If no argument or `loop` or `start`:** Skip to "Loop Mode" section.
-**If `single` or `task`:** Follow "Interactive Mode" section.
+Parse `$ARGUMENTS` and take the corresponding action:
+
+| Argument | Action | Go To |
+|----------|--------|-------|
+| (none) | **MUST launch background script** | → "Loop Mode" section |
+| `loop` | **MUST launch background script** | → "Loop Mode" section |
+| `start` | Create branch, then **MUST launch background script** | → "Loop Mode" section |
+| `single` | Execute ONE task interactively | → "Implementation Loop" section |
+| `task US-XXX` | Jump to specific task interactively | → "Implementation Loop" section |
+| `verify` | Re-run verification commands only | → "Step 5: Run Verification" |
+
+### Default Behavior Enforcement
+
+**STOP.** Before proceeding, confirm which mode you are in:
+
+- **If argument is empty, `loop`, or `start`:** You MUST go directly to the "Loop Mode" section and launch `.claude/scripts/implement-loop.sh`. Do NOT execute tasks interactively.
+- **If argument is `single` or `task`:** You may execute tasks interactively in this conversation.
+- **If unsure:** Default to Loop Mode (launch the script).
+
+This is not optional. The default `/implement` command REQUIRES launching the background script.
 
 ---
 
@@ -81,27 +92,36 @@ If any prerequisite fails, stop and inform the user how to fix it.
 
 ---
 
-## Step 0b: Check Loop Status
+## Step 0b: Check Loop Status and Determine Flow
 
-Before executing, check if a background loop is running or completed:
+**IMPORTANT:** This step determines which section to execute next.
 
-### Check for running loop
+### 1. Check for running loop
 ```bash
 if [ -f .claude/implement-loop.pid ]; then
   PID=$(cat .claude/implement-loop.pid)
   if kill -0 $PID 2>/dev/null; then
     echo "Background loop is running (PID: $PID)"
     echo "Monitor: tail -f .claude/implement-loop.log"
-    # Exit early - loop is handling implementation
+    # STOP - loop is handling implementation, do not proceed
   fi
 fi
 ```
 
-### Check prd.json state
-After checking for running loop:
-- If `debugState.status == "testing"` → enter testing checkpoint
-- If all tasks pass but no debugState → enter testing checkpoint
-- Otherwise → proceed with single task execution
+### 2. Check prd.json state
+- If `debugState.status == "testing"` → go to "Testing Checkpoint" section
+- If all tasks pass but no debugState → go to "Testing Checkpoint" section
+- Otherwise → continue based on mode:
+
+### 3. Route to correct section based on argument
+
+| Mode | Determined By | Go To Section |
+|------|---------------|---------------|
+| **Loop Mode** | No argument, `loop`, or `start` | "Loop Mode" (below) |
+| **Interactive Mode** | `single` or `task US-XXX` | "Implementation Loop" |
+| **Verify Mode** | `verify` | "Step 5: Run Verification" |
+
+**REMINDER:** If you are in Loop Mode (default), you MUST skip the "Implementation Loop" section and go directly to "Loop Mode" to launch the background script.
 
 ---
 
@@ -124,7 +144,67 @@ This command is designed to work **without memory** of previous runs. Context co
 
 ---
 
-## Implementation Loop
+## Loop Mode (DEFAULT - Check This First)
+
+**If you are running `/implement` with no arguments, `loop`, or `start`, you MUST follow this section.**
+
+You MUST launch the background script. Do NOT execute tasks interactively.
+
+### Step L1: Verify Script Exists
+
+```bash
+if [ ! -f .claude/scripts/implement-loop.sh ]; then
+  echo "❌ Background script not found: .claude/scripts/implement-loop.sh"
+  echo "This file is required for the default /implement behavior."
+  exit 1
+fi
+```
+
+### Step L2: Launch Background Script
+
+```bash
+# Make script executable if needed
+chmod +x .claude/scripts/implement-loop.sh
+
+# Run in background, output to log
+nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &
+LOOP_PID=$!
+echo $LOOP_PID > .claude/implement-loop.pid
+```
+
+### Step L3: Inform User and STOP
+
+Output this message and then STOP (do not continue to Implementation Loop):
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 Implementation loop started (PID: $LOOP_PID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The loop runs in the background until:
+  ✅ All tasks pass → testing checkpoint
+  ⛔ A task is blocked → needs your input
+  ⚠️  Max iterations → safety stop
+
+Monitor progress:
+  tail -f .claude/implement-loop.log
+
+Stop the loop:
+  kill $(cat .claude/implement-loop.pid)
+
+When done, run /implement to continue.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**STOP HERE if in Loop Mode.** Do not proceed to Implementation Loop.
+
+---
+
+## Implementation Loop (Interactive Mode Only)
+
+**Only proceed to this section if the user specified `single` or `task US-XXX`.**
+
+If you are in Loop Mode (default), you should have already launched the background script and stopped. Do NOT execute tasks interactively unless explicitly requested.
 
 ### Step 1: Load Context
 
@@ -401,46 +481,13 @@ This provides directory-specific context for future AI iterations.
 
 ---
 
-## Loop Mode
+## Loop Mode Reference
 
-When `/implement loop` is invoked, launch the background script for autonomous execution:
+**See "Loop Mode (DEFAULT - Check This First)" section above for launch instructions.**
 
-### Step 1: Launch Background Script
+This section provides additional reference information about how the background script works.
 
-```bash
-# Make script executable if needed
-chmod +x .claude/scripts/implement-loop.sh
-
-# Run in background, output to log
-nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &
-LOOP_PID=$!
-echo $LOOP_PID > .claude/implement-loop.pid
-```
-
-### Step 2: Inform User
-
-Output:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Implementation loop started (PID: $LOOP_PID)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The loop runs in the background until:
-  ✅ All tasks pass → testing checkpoint
-  ⛔ A task is blocked → needs your input
-  ⚠️  Max iterations → safety stop
-
-Monitor progress:
-  tail -f .claude/implement-loop.log
-
-Stop the loop:
-  kill $(cat .claude/implement-loop.pid)
-
-When done, run /implement to continue.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### Step 3: User Returns Later
+### When User Returns After Loop
 
 When user runs `/implement` after loop completes:
 - Check if `debugState.status == "testing"` or all tasks pass
