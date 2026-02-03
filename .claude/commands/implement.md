@@ -35,6 +35,35 @@ For each task, the loop:
 
 ---
 
+## 🚨 CRITICAL REQUIREMENTS - NON-NEGOTIABLE
+
+**These actions are REQUIRED for every task. Do NOT skip any item.**
+
+### After EVERY Task (Pass or Fail), You MUST:
+
+- [ ] **Run ALL verify commands** - Execute every command in `verifyCommands`
+- [ ] **Update prd.json** - Set `passes`, increment `attempts`, set `lastAttempt`
+- [ ] **Commit changes** - Implementation commit (if passed) + prd.json commit
+- [ ] **Push to remote** - `git push` after commits
+- [ ] **MUST post task log to GitHub** - Use `gh issue comment` with the `## 📝 Task Log: US-XXX` format
+- [ ] **MUST post discovery note if patterns found** - If you learn something future tasks need, post `## 🔍 Discovery Note`
+
+### GitHub Posting is MANDATORY
+
+**Task logs MUST be posted to the GitHub issue** after every task attempt. This is not optional.
+
+Format: `gh issue comment $ISSUE_NUMBER --body "## 📝 Task Log: US-XXX ..."`
+
+**Discovery notes MUST be posted** when you discover patterns, gotchas, or learnings that future tasks should know about. This is how the Ralph pattern maintains memory across sessions.
+
+Format: `gh issue comment $ISSUE_NUMBER --body "## 🔍 Discovery Note ..."`
+
+### Enforcement
+
+If you complete a task without posting to GitHub, the task is NOT complete. Go back and post the required comments before proceeding.
+
+---
+
 ## ⚠️ MODE SELECTION - READ THIS FIRST
 
 **You MUST launch the background script** unless the user explicitly specified `single` or `task US-XXX`.
