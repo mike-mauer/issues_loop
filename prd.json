@@ -12,7 +12,9 @@
       "priority": 1,
       "title": "Rename command files with il_ prefix",
       "description": "Rename all 6 command files to use the il_ prefix with sequential numbering for core workflow. Non-sequential commands get descriptive names without numbers.",
-      "files": [".claude/commands/*.md"],
+      "files": [
+        ".claude/commands/*.md"
+      ],
       "dependsOn": [],
       "acceptanceCriteria": [
         "All 6 files renamed with il_ prefix",
@@ -33,8 +35,12 @@
       "priority": 2,
       "title": "Update command headers and descriptions",
       "description": "Update the # header and ## Description in each renamed file to reflect the new command names. Update Usage sections with new command syntax.",
-      "files": [".claude/commands/il_*.md"],
-      "dependsOn": ["US-001"],
+      "files": [
+        ".claude/commands/il_*.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
       "acceptanceCriteria": [
         "Each file's # header matches its new command name",
         "Usage sections show new command syntax",
@@ -53,8 +59,12 @@
       "priority": 3,
       "title": "Consolidate close close into il_3_close",
       "description": "Merge the 'close close' functionality into a single command. After PR merge, /il_3_close should detect merged state and automatically archive without requiring a second invocation.",
-      "files": [".claude/commands/il_3_close.md"],
-      "dependsOn": ["US-002"],
+      "files": [
+        ".claude/commands/il_3_close.md"
+      ],
+      "dependsOn": [
+        "US-002"
+      ],
       "acceptanceCriteria": [
         "No 'close close' syntax exists in documentation",
         "Single /il_3_close command handles both report+PR and archive",
@@ -74,8 +84,14 @@
       "priority": 4,
       "title": "Update all documentation references",
       "description": "Search and replace all references to old command names in documentation files. Update examples and workflow descriptions.",
-      "files": ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/rules/*.md"],
-      "dependsOn": ["US-002"],
+      "files": [
+        "CLAUDE.md",
+        ".claude/CLAUDE.md",
+        ".claude/rules/*.md"
+      ],
+      "dependsOn": [
+        "US-002"
+      ],
       "acceptanceCriteria": [
         "No references to /issue, /implement, /issues in docs (except in historical context)",
         "All references use new il_ naming",
@@ -94,8 +110,12 @@
       "priority": 5,
       "title": "Update cross-references between commands",
       "description": "Update any references within command files that point to other commands. Ensure 'Run /il_2_implement' replaces 'Run /implement', etc.",
-      "files": [".claude/commands/il_*.md"],
-      "dependsOn": ["US-004"],
+      "files": [
+        ".claude/commands/il_*.md"
+      ],
+      "dependsOn": [
+        "US-004"
+      ],
       "acceptanceCriteria": [
         "All internal command references use il_ naming",
         "Suggested next steps use correct new names",
@@ -112,5 +132,8 @@
   "globalVerifyCommands": [
     "ls .claude/commands/il_*.md | wc -l",
     "grep -r '/issue\\|/implement' .claude/commands/ | grep -v 'il_' | wc -l"
-  ]
+  ],
+  "debugState": {
+    "status": "testing"
+  }
 }
