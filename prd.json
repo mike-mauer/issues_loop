@@ -1,0 +1,102 @@
+{
+  "project": "custom-planning-protocol",
+  "issueNumber": 6,
+  "branchName": "ai/issue-6-custom-planning-protocol",
+  "description": "Build custom planning protocol to replace EnterPlanMode/ExitPlanMode",
+  "generatedAt": "2026-02-02T13:00:00Z",
+  "status": "approved",
+  "userStories": [
+    {
+      "id": "US-001",
+      "phase": 1,
+      "priority": 1,
+      "title": "Create custom planning protocol document",
+      "description": "Create the full protocol specification document defining all 5 phases (Exploration, Task Decomposition, Design Validation, GitHub Posting, prd.json Generation). Include detailed instructions for each phase, checkpoint questions with options, and examples.",
+      "files": [".claude/rules/custom-planning-protocol.md"],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "File .claude/rules/custom-planning-protocol.md exists",
+        "All 5 phases are documented with clear instructions",
+        "Each phase has AskUserQuestion checkpoint with options",
+        "Includes format requirements (references planning-guide.md)"
+      ],
+      "verifyCommands": [
+        "test -f .claude/rules/custom-planning-protocol.md",
+        "grep -q 'Phase 1' .claude/rules/custom-planning-protocol.md",
+        "grep -q 'Phase 5' .claude/rules/custom-planning-protocol.md",
+        "grep -q 'AskUserQuestion' .claude/rules/custom-planning-protocol.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    },
+    {
+      "id": "US-002",
+      "phase": 1,
+      "priority": 2,
+      "title": "Update /issue command Step 4 to use custom protocol",
+      "description": "Replace the current Step 4 (which uses EnterPlanMode/ExitPlanMode) with instructions to follow the custom planning protocol. Remove all references to EnterPlanMode and ExitPlanMode. Reference the new protocol document.",
+      "files": [".claude/commands/issue.md"],
+      "dependsOn": ["US-001"],
+      "acceptanceCriteria": [
+        "Step 4 references .claude/rules/custom-planning-protocol.md",
+        "No references to EnterPlanMode in the file",
+        "No references to ExitPlanMode in the file",
+        "Step 4 outlines the 5-phase flow"
+      ],
+      "verifyCommands": [
+        "! grep -q 'EnterPlanMode' .claude/commands/issue.md",
+        "! grep -q 'ExitPlanMode' .claude/commands/issue.md",
+        "grep -q 'custom-planning-protocol' .claude/commands/issue.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    },
+    {
+      "id": "US-003",
+      "phase": 2,
+      "priority": 3,
+      "title": "Add Discovery Summary template to protocol",
+      "description": "Add a structured Discovery Summary template to Phase 1 of the protocol. This template shows users what was explored (files examined, patterns found, risks identified) before proceeding to planning.",
+      "files": [".claude/rules/custom-planning-protocol.md"],
+      "dependsOn": ["US-001"],
+      "acceptanceCriteria": [
+        "Discovery Summary template exists in Phase 1 section",
+        "Template includes: files examined, patterns found, risks, recommended structure",
+        "Example output is provided"
+      ],
+      "verifyCommands": [
+        "grep -q 'Discovery Summary' .claude/rules/custom-planning-protocol.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    },
+    {
+      "id": "US-004",
+      "phase": 2,
+      "priority": 4,
+      "title": "Add validation checks to Phase 3",
+      "description": "Expand Phase 3 (Design Validation) with specific validation checks: task size check, acceptance criteria testability check, verify commands existence check, dependency cycle check.",
+      "files": [".claude/rules/custom-planning-protocol.md"],
+      "dependsOn": ["US-001"],
+      "acceptanceCriteria": [
+        "Phase 3 lists specific validation checks",
+        "Each check has pass/fail criteria",
+        "Examples of good vs bad acceptance criteria included",
+        "Recommendations for fixing common issues"
+      ],
+      "verifyCommands": [
+        "grep -q 'Validation' .claude/rules/custom-planning-protocol.md",
+        "grep -q 'testable' .claude/rules/custom-planning-protocol.md"
+      ],
+      "passes": false,
+      "attempts": 0,
+      "lastAttempt": null
+    }
+  ],
+  "globalVerifyCommands": [
+    "cat .claude/rules/custom-planning-protocol.md | head -5"
+  ]
+}
