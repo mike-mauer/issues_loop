@@ -25,7 +25,22 @@
       "Bash(gh issue edit:*)",
       "Bash([ -f prd.json ])",
       "Bash(git checkout:*)",
-      "Bash(gh pr create:*)"
+      "Bash(gh pr create:*)",
+      "Bash(gh issue close:*)",
+      "WebSearch",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:claudelog.com)",
+      "Bash(gh issue comment 6 --body \"$\\(cat <<''EOF''\n## 📋 Implementation Plan\n\n**Issue:** #6 - Custom Planning Protocol\n**Generated:** 2026-02-02\n**Status:** Approved\n**Complexity:** Medium \\(4 tasks across 2 phases\\)\n\n---\n\n### Overview\nReplace native `EnterPlanMode`/`ExitPlanMode` with a custom 5-phase planning protocol that integrates seamlessly with our workflow. Uses `AskUserQuestion` for checkpoints, posts to GitHub at key phases, and generates prd.json on approval.\n\n---\n\n### Phase 1: Foundation\n\n#### US-001: Create custom planning protocol document\n**Files:** `.claude/rules/custom-planning-protocol.md`\n**Depends on:** None\n\nCreate the full protocol specification defining all 5 phases:\n- Phase 1: Exploration\n- Phase 2: Task Decomposition\n- Phase 3: Design Validation\n- Phase 4: GitHub Posting\n- Phase 5: prd.json Generation\n\n#### US-002: Update /issue command Step 4\n**Files:** `.claude/commands/issue.md`\n**Depends on:** US-001\n\nReplace EnterPlanMode/ExitPlanMode with custom protocol reference.\n\n---\n\n### Phase 2: Enhancements\n\n#### US-003: Add Discovery Summary template\n**Files:** `.claude/rules/custom-planning-protocol.md`\n**Depends on:** US-001\n\nStructured template for Phase 1 output.\n\n#### US-004: Add validation checks to Phase 3\n**Files:** `.claude/rules/custom-planning-protocol.md`\n**Depends on:** US-001\n\nSpecific validation checks for task quality.\n\n---\n\n### Task Dependencies\n```\nUS-001 \\(Priority 1\\)\n   ├─→ US-002 \\(Priority 2\\)\n   ├─→ US-003 \\(Priority 3\\)\n   └─→ US-004 \\(Priority 4\\)\n```\nEOF\n\\)\")",
+      "Bash(test:*)",
+      "Bash(! grep -q 'EnterPlanMode' .claude/commands/issue.md)",
+      "Bash(if grep -q 'EnterPlanMode' .claude/commands/issue.md)",
+      "Bash(then echo \"❌ EnterPlanMode still exists\")",
+      "Bash(else echo \"✓ No EnterPlanMode references\")",
+      "Bash(fi)",
+      "Bash(if grep -q 'ExitPlanMode' .claude/commands/issue.md)",
+      "Bash(then echo \"❌ ExitPlanMode still exists\")",
+      "Bash(else echo \"✓ No ExitPlanMode references\")",
+      "Bash(gh issue create --title \"Bug: /implement does not run implement-loop.sh script\" --body \"$\\(cat <<''EOF''\n## Description\n\nThe `/implement` command documentation specifies that the default behavior should launch `.claude/scripts/implement-loop.sh` in the background for autonomous task execution. However, when `/implement` is invoked, Claude executes tasks interactively in the conversation instead of running the script.\n\n## Expected Behavior\n\n```\n/implement              # Should launch background script \\(DEFAULT\\)\n/implement single       # Should execute ONE task interactively\n```\n\nWhen running `/implement` \\(no arguments\\), the script should be launched:\n```bash\nnohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &\n```\n\n## Actual Behavior\n\nClaude reads the `/implement` command instructions but then proceeds to execute tasks directly in the conversation, bypassing the script entirely.\n\n## Root Cause\n\nThe command documentation tells Claude what to do, but there''s no enforcement mechanism. Claude chooses to do the work interactively rather than launching the script.\n\n## Proposed Solutions\n\n1. **Stronger language** - Add explicit \"You MUST run the script, do NOT execute tasks interactively\" to the command\n2. **Script check first** - Command should verify script exists and launch it BEFORE any task analysis\n3. **Refuse without script** - Default `/implement` should refuse to proceed if it can''t launch the script\n\n## Files Affected\n\n- `.claude/commands/implement.md` - Command instructions need strengthening\n- `.claude/scripts/implement-loop.sh` - Script exists but isn''t being invoked\n\n## Acceptance Criteria\n\n- [ ] Running `/implement` \\(no args\\) launches the background script\n- [ ] Running `/implement single` executes one task interactively\n- [ ] Clear error if script doesn''t exist when running default mode\nEOF\n\\)\")"
     ]
   }
 }
