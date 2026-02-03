@@ -112,5 +112,10 @@
   ],
   "globalVerifyCommands": [
     "cat .claude/rules/custom-planning-protocol.md | head -5"
-  ]
+  ],
+  "debugState": {
+    "status": "verified",
+    "debugAttempts": 0,
+    "debugHistory": []
+  }
 }
