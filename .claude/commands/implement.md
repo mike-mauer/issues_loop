@@ -235,6 +235,18 @@ When done, run /implement to continue.
 
 If you are in Loop Mode (default), you should have already launched the background script and stopped. Do NOT execute tasks interactively unless explicitly requested.
 
+### ⚠️ Interactive Mode Still Requires GitHub Posting
+
+**Using `single` or `task` does NOT skip the CRITICAL REQUIREMENTS.**
+
+Even in interactive mode, you MUST:
+- Follow the 🚨 CRITICAL REQUIREMENTS section (see above)
+- Complete the 🛑 POST-TASK CHECKLIST after each task
+- Post task logs to GitHub with `gh issue comment`
+- Post discovery notes when patterns are found
+
+The only difference is that YOU execute the task in this conversation instead of the background script. All other requirements remain the same.
+
 ### Step 1: Load Context
 
 ```bash
