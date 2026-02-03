@@ -367,6 +367,30 @@ Acceptance criteria: all passing"
 git push
 ```
 
+---
+
+### 🛑 POST-TASK CHECKLIST - STOP AND VERIFY
+
+**STOP. Do not proceed until ALL items are completed.**
+
+Before moving to the next task, verify you have done ALL of the following:
+
+| # | Item | Required | Done? |
+|---|------|----------|-------|
+| 1 | **Run verify commands** | All commands in `verifyCommands` executed | ☐ |
+| 2 | **Update prd.json** | `passes`, `attempts`, `lastAttempt` updated | ☐ |
+| 3 | **Commit implementation** | Code changes committed with task reference | ☐ |
+| 4 | **Commit prd.json** | Status update committed | ☐ |
+| 5 | **Push to remote** | `git push` completed | ☐ |
+| 6 | **Post task log to GitHub** | `gh issue comment` with `## 📝 Task Log` posted | ☐ |
+| 7 | **Post discovery note** | If patterns found, `## 🔍 Discovery Note` posted | ☐ |
+
+**⚠️ If you skip the GitHub posting steps, the task is NOT complete.**
+
+The GitHub comments are the memory system - without them, future sessions won't know what was learned.
+
+---
+
 ### Step 8: Post Task Log to Issue
 
 #### If PASSED:
