@@ -19,14 +19,19 @@ For each task, the loop:
 
 ## Usage
 ```
-/implement              # Launch background loop (DEFAULT - autonomous)
+/implement              # Launch background loop (DEFAULT)
 /implement start        # Create branch + start background loop
-/implement single       # Execute ONE task interactively (not loop)
-/implement task US-003  # Jump to specific task (interactive)
 /implement verify       # Re-run verification for current task
 ```
 
-**Default behavior is loop mode** - launches `.claude/scripts/implement-loop.sh` in background for autonomous task execution. Use `/implement single` if you need interactive mode for debugging.
+**There is only one mode: Loop Mode.** This command launches `.claude/scripts/implement-loop.sh` which executes tasks with fresh context per task.
+
+### ⚠️ Escape Hatch (Breaks Fresh Context)
+```
+/implement interactive-mode    # ESCAPE HATCH - executes in conversation
+```
+
+**WARNING:** Interactive mode breaks the Ralph pattern's fresh context principle. You will have memory of previous tasks, which defeats the purpose of the memory system. Only use this for debugging when the loop is failing and you need to step through manually.
 
 ## Prerequisites
 - Issue loaded (`/issue {number}`)
@@ -66,30 +71,27 @@ If you complete a task without posting to GitHub, the task is NOT complete. Go b
 
 ## ⚠️ MODE SELECTION - READ THIS FIRST
 
-**You MUST launch the background script** unless the user explicitly specified `single` or `task US-XXX`.
+**You MUST launch the background script.** There is no interactive mode by default.
 
 ### Argument Check (Do This Immediately)
 
-Parse `$ARGUMENTS` and take the corresponding action:
-
 | Argument | Action | Go To |
 |----------|--------|-------|
-| (none) | **MUST launch background script** | → "Loop Mode" section |
-| `loop` | **MUST launch background script** | → "Loop Mode" section |
-| `start` | Create branch, then **MUST launch background script** | → "Loop Mode" section |
-| `single` | Execute ONE task interactively | → "Implementation Loop" section |
-| `task US-XXX` | Jump to specific task interactively | → "Implementation Loop" section |
+| (none) | **Launch background script** | → "Loop Mode" section |
+| `start` | Create branch, then launch script | → "Loop Mode" section |
 | `verify` | Re-run verification commands only | → "Step 5: Run Verification" |
+| `interactive-mode` | ⚠️ ESCAPE HATCH - breaks fresh context | → "Interactive Mode" section |
 
-### Default Behavior Enforcement
+### Why No Default Interactive Mode?
 
-**STOP.** Before proceeding, confirm which mode you are in:
+The Ralph pattern requires **fresh context per task**. When you execute tasks in a conversation:
+- You have memory of previous tasks (violates fresh context)
+- You don't need to read GitHub comments (bypasses the memory system)
+- The whole point of task logs and discovery notes is lost
 
-- **If argument is empty, `loop`, or `start`:** You MUST go directly to the "Loop Mode" section and launch `.claude/scripts/implement-loop.sh`. Do NOT execute tasks interactively.
-- **If argument is `single` or `task`:** You may execute tasks interactively in this conversation.
-- **If unsure:** Default to Loop Mode (launch the script).
+The background script enforces fresh context because each task runs as a separate `claude --print` invocation with zero memory of previous tasks.
 
-This is not optional. The default `/implement` command REQUIRES launching the background script.
+**If you need to debug:** Use `/implement interactive-mode` but understand you're breaking the pattern.
 
 ---
 
@@ -229,23 +231,34 @@ When done, run /implement to continue.
 
 ---
 
-## Implementation Loop (Interactive Mode Only)
+## Interactive Mode (ESCAPE HATCH ONLY)
 
-**Only proceed to this section if the user specified `single` or `task US-XXX`.**
+**⚠️ WARNING: This mode breaks the Ralph pattern's fresh context principle.**
 
-If you are in Loop Mode (default), you should have already launched the background script and stopped. Do NOT execute tasks interactively unless explicitly requested.
+Only proceed to this section if the user explicitly specified `interactive-mode`.
 
-### ⚠️ Interactive Mode Still Requires GitHub Posting
+### Why This Is Problematic
 
-**Using `single` or `task` does NOT skip the CRITICAL REQUIREMENTS.**
+When you execute tasks in a conversation:
+1. **You have memory** - You remember previous tasks, violating fresh context
+2. **You skip the memory system** - You don't need to read GitHub comments
+3. **Future sessions won't benefit** - Learnings stay in your head, not in comments
+
+### When To Use This
+
+- The background script is failing and you need to debug
+- You need to step through a specific task manually
+- You understand and accept you're breaking the pattern
+
+### Requirements Still Apply
 
 Even in interactive mode, you MUST:
-- Follow the 🚨 CRITICAL REQUIREMENTS section (see above)
+- Follow the 🚨 CRITICAL REQUIREMENTS section
 - Complete the 🛑 POST-TASK CHECKLIST after each task
 - Post task logs to GitHub with `gh issue comment`
 - Post discovery notes when patterns are found
 
-The only difference is that YOU execute the task in this conversation instead of the background script. All other requirements remain the same.
+**The GitHub posting is even MORE important here** because it's the only way learnings from this session will persist for future sessions.
 
 ### Step 1: Load Context
 
