@@ -79,9 +79,9 @@
       "verifyCommands": [
         "grep -q 'Discovery Summary' .claude/rules/custom-planning-protocol.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-02T13:50:00Z"
     },
     {
       "id": "US-004",
@@ -105,9 +105,9 @@
         "grep -q 'Validation' .claude/rules/custom-planning-protocol.md",
         "grep -q 'testable' .claude/rules/custom-planning-protocol.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-02T13:50:00Z"
     }
   ],
   "globalVerifyCommands": [
