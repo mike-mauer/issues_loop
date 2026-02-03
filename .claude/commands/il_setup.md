@@ -1,13 +1,13 @@
-# /issue setup - Initialize GitHub Issue Workflow
+# /il_setup - Initialize GitHub Issue Workflow
 
 ## Description
-Sets up the GitHub repository for the AI-assisted issue workflow. Creates labels, verifies prerequisites, and configures the repository for automated planning.
+Sets up the GitHub repository for the AI-assisted issue workflow. Creates labels, verifies prerequisites, and configures the repository for automated planning. Run this utility command before starting the core workflow.
 
 ## Usage
 ```
-/issue setup              # Full setup
-/issue setup --labels     # Only create labels
-/issue setup --verify     # Check setup without making changes
+/il_setup              # Full setup
+/il_setup --labels     # Only create labels
+/il_setup --verify     # Check setup without making changes
 ```
 
 ## Prerequisites Check
@@ -233,11 +233,11 @@ Labels:
 
 Files:
   ✅ .claude/rules/github-issue-workflow.md
-  ✅ .claude/commands/issues.md
-  ✅ .claude/commands/issue.md
+  ✅ .claude/commands/il_list.md
+  ✅ .claude/commands/il_1_plan.md
   ✅ .claude/commands/plan.md
-  ✅ .claude/commands/implement.md
-  ✅ .claude/commands/issue-close.md
+  ✅ .claude/commands/il_2_implement.md
+  ✅ .claude/commands/il_3_close.md
   ⚠️  .github/ISSUE_TEMPLATE/ai_request.md (missing - optional)
 
 =====================================
@@ -261,7 +261,7 @@ If setup partially fails, user can run individual fixes:
 
 ```bash
 # Re-run just labels
-/issue setup --labels
+/il_setup --labels
 
 # Manual label creation
 gh label create "AI" --color "7057ff" --force

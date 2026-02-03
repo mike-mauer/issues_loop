@@ -1,13 +1,13 @@
-# /issues - List Open GitHub Issues
+# /il_list - List Open GitHub Issues
 
 ## Description
-Fetches and displays all open GitHub issues from the current repository, allowing you to select one for implementation.
+Fetches and displays all open GitHub issues from the current repository, allowing you to select one for implementation. This is a utility command to discover available issues.
 
 ## Usage
 ```
-/issues
-/issues --label AI
-/issues --assignee @me
+/il_list
+/il_list --label AI
+/il_list --assignee @me
 ```
 
 ## Workflow
@@ -44,7 +44,7 @@ Enter issue number to load (e.g., "1" for #42), or "q" to cancel:
 ```
 
 ### Step 4: Load Selected Issue
-When user selects an issue, automatically invoke `/issue {number}` to load it.
+When user selects an issue, automatically invoke `/il_1_plan {number}` to load it.
 
 ## Output Format
 - Show issue number, title, labels, and relative timestamps
@@ -58,7 +58,7 @@ When user selects an issue, automatically invoke `/issue {number}` to load it.
 - If not authenticated: "Error: Not authenticated with GitHub. Run: gh auth login"
 
 ## After Selection
-Once an issue is selected, the `/issue` command will:
+Once an issue is selected, the `/il_1_plan` command will:
 1. Load the full issue details
 2. Check for existing implementation plan in comments
 3. Display plan status and next steps

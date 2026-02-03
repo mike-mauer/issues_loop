@@ -182,7 +182,7 @@ Every task needs commands that prove success:
 
 ### Branch
 - One branch per issue: `ai/issue-{number}-{slug}`
-- Created at `/implement start`
+- Created at `/il_2_implement start`
 - All task commits go here
 
 ### Commits
@@ -233,14 +233,14 @@ US-004, US-005 should follow this pattern
 
 | Command | Action |
 |---------|--------|
-| `/issue setup` | Create labels, templates |
-| `/issues` | List open issues |
-| `/issue N` | Load → scope → plan → approve (guided flow) |
-| `/issue N --quick` | Load issue, skip to status check |
-| `/implement` | Execute next failing task |
-| `/implement start` | Create branch, start from US-001 |
-| `/implement loop` | Auto-continue until blocked |
-| `/issue close` | Generate final report, create PR |
+| `/il_setup` | Create labels, templates |
+| `/il_list` | List open issues |
+| `/il_1_plan N` | Load → scope → plan → approve (guided flow) |
+| `/il_1_plan N --quick` | Load issue, skip to status check |
+| `/il_2_implement` | Execute next failing task |
+| `/il_2_implement start` | Create branch, start from US-001 |
+| `/il_2_implement loop` | Auto-continue until blocked |
+| `/il_3_close` | Generate final report, create PR, archive after merge |
 
 ---
 
@@ -253,13 +253,13 @@ cat prd.json | jq '.userStories[] | {id, passes, attempts}'
 git log --oneline -5
 
 # Resume
-/implement
+/il_2_implement
 ```
 
 ### Task Keeps Failing
 1. Review all task logs in issue
 2. Human adds comment with guidance
-3. Run `/implement` to retry with new context
+3. Run `/il_2_implement` to retry with new context
 
 ### Need to Skip a Task
 ```bash
@@ -296,7 +296,7 @@ All tasks pass → Testing Checkpoint → User tests
                         ↓                ↓                ↓
                     "Works"          "Issue"          "Later"
                         ↓                ↓                ↓
-                 /issue close      Debug Flow         Pause
+                 /il_3_close       Debug Flow         Pause
                                          ↓
                                    Gather info (3 questions)
                                          ↓
@@ -331,5 +331,5 @@ All tasks pass → Testing Checkpoint → User tests
 | `## 🚫 Debug Blocked` | 3 failures | Escalate to human |
 
 ### Completion
-- User confirms "Works" → `debugState.status = "verified"` → Run `/issue close`
+- User confirms "Works" → `debugState.status = "verified"` → Run `/il_3_close`
 - 3 debug failures → `AI: Blocked` label → Human intervention needed

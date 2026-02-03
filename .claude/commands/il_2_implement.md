@@ -1,7 +1,7 @@
-# /implement - Execute Task Loop (Ralph Pattern)
+# /il_2_implement - Execute Task Loop (Ralph Pattern)
 
 ## Description
-Executes the implementation loop following the Ralph pattern. **By default, launches a background loop** that autonomously executes all tasks until complete or blocked.
+Executes the implementation loop following the Ralph pattern. **By default, launches a background loop** that autonomously executes all tasks until complete or blocked. This is Step 2 of the core workflow.
 
 The loop script (`.claude/scripts/implement-loop.sh`) provides:
 - Fresh context per task (calls Claude CLI for each)
@@ -19,14 +19,20 @@ For each task, the loop:
 
 ## Usage
 ```
-/implement              # Launch background loop (DEFAULT - autonomous)
-/implement start        # Create branch + start background loop
-/implement single       # Execute ONE task interactively (not loop)
-/implement task US-003  # Jump to specific task (interactive)
-/implement verify       # Re-run verification for current task
+/il_2_implement              # Create branch if needed + launch background loop
+/il_2_implement verify       # Re-run verification for current task
 ```
 
-**Default behavior is loop mode** - launches `.claude/scripts/implement-loop.sh` in background for autonomous task execution. Use `/implement single` if you need interactive mode for debugging.
+**There is only one mode: Loop Mode.** This command:
+1. Creates the branch from `prd.json` if it doesn't exist
+2. Launches `.claude/scripts/implement-loop.sh` for fresh context per task
+
+### ⚠️ Escape Hatch (Breaks Fresh Context)
+```
+/implement interactive-mode    # ESCAPE HATCH - executes in conversation
+```
+
+**WARNING:** Interactive mode breaks the Ralph pattern's fresh context principle. You will have memory of previous tasks, which defeats the purpose of the memory system. Only use this for debugging when the loop is failing and you need to step through manually.
 
 ## Prerequisites
 - Issue loaded (`/issue {number}`)
@@ -35,21 +41,57 @@ For each task, the loop:
 
 ---
 
-## Argument Handling
+## 🚨 CRITICAL REQUIREMENTS - NON-NEGOTIABLE
 
-Parse `$ARGUMENTS` to determine mode:
+**These actions are REQUIRED for every task. Do NOT skip any item.**
 
-| Argument | Mode | Action |
-|----------|------|--------|
-| (none) | **Loop (default)** | Launch background script |
-| `start` | Loop + branch | Create branch, then launch background script |
-| `single` | Interactive | Execute ONE task in conversation |
-| `task US-XXX` | Interactive | Jump to specific task |
-| `loop` | Loop | Same as default (explicit) |
-| `verify` | Verify | Re-run verification commands |
+### After EVERY Task (Pass or Fail), You MUST:
 
-**If no argument or `loop` or `start`:** Skip to "Loop Mode" section.
-**If `single` or `task`:** Follow "Interactive Mode" section.
+- [ ] **Run ALL verify commands** - Execute every command in `verifyCommands`
+- [ ] **Update prd.json** - Set `passes`, increment `attempts`, set `lastAttempt`
+- [ ] **Commit changes** - Implementation commit (if passed) + prd.json commit
+- [ ] **Push to remote** - `git push` after commits
+- [ ] **MUST post task log to GitHub** - Use `gh issue comment` with the `## 📝 Task Log: US-XXX` format
+- [ ] **MUST post discovery note if patterns found** - If you learn something future tasks need, post `## 🔍 Discovery Note`
+
+### GitHub Posting is MANDATORY
+
+**Task logs MUST be posted to the GitHub issue** after every task attempt. This is not optional.
+
+Format: `gh issue comment $ISSUE_NUMBER --body "## 📝 Task Log: US-XXX ..."`
+
+**Discovery notes MUST be posted** when you discover patterns, gotchas, or learnings that future tasks should know about. This is how the Ralph pattern maintains memory across sessions.
+
+Format: `gh issue comment $ISSUE_NUMBER --body "## 🔍 Discovery Note ..."`
+
+### Enforcement
+
+If you complete a task without posting to GitHub, the task is NOT complete. Go back and post the required comments before proceeding.
+
+---
+
+## ⚠️ MODE SELECTION - READ THIS FIRST
+
+**You MUST launch the background script.** There is no interactive mode by default.
+
+### Argument Check (Do This Immediately)
+
+| Argument | Action | Go To |
+|----------|--------|-------|
+| (none) | Create branch if needed + launch script | → "Loop Mode" section |
+| `verify` | Re-run verification commands only | → "Step 5: Run Verification" |
+| `interactive-mode` | ⚠️ ESCAPE HATCH - breaks fresh context | → "Interactive Mode" section |
+
+### Why No Default Interactive Mode?
+
+The Ralph pattern requires **fresh context per task**. When you execute tasks in a conversation:
+- You have memory of previous tasks (violates fresh context)
+- You don't need to read GitHub comments (bypasses the memory system)
+- The whole point of task logs and discovery notes is lost
+
+The background script enforces fresh context because each task runs as a separate `claude --print` invocation with zero memory of previous tasks.
+
+**If you need to debug:** Use `/implement interactive-mode` but understand you're breaking the pattern.
 
 ---
 
@@ -74,34 +116,43 @@ git remote get-url origin 2>/dev/null | grep -q github || { echo "❌ No GitHub 
 which jq || { echo "❌ jq not found. Install with: brew install jq"; exit 1; }
 
 # 6. Check prd.json exists
-[ -f prd.json ] || { echo "❌ prd.json not found. Run /issue N first to create a plan."; exit 1; }
+[ -f prd.json ] || { echo "❌ prd.json not found. Run /il_1_plan N first to create a plan."; exit 1; }
 ```
 
 If any prerequisite fails, stop and inform the user how to fix it.
 
 ---
 
-## Step 0b: Check Loop Status
+## Step 0b: Check Loop Status and Determine Flow
 
-Before executing, check if a background loop is running or completed:
+**IMPORTANT:** This step determines which section to execute next.
 
-### Check for running loop
+### 1. Check for running loop
 ```bash
 if [ -f .claude/implement-loop.pid ]; then
   PID=$(cat .claude/implement-loop.pid)
   if kill -0 $PID 2>/dev/null; then
     echo "Background loop is running (PID: $PID)"
     echo "Monitor: tail -f .claude/implement-loop.log"
-    # Exit early - loop is handling implementation
+    # STOP - loop is handling implementation, do not proceed
   fi
 fi
 ```
 
-### Check prd.json state
-After checking for running loop:
-- If `debugState.status == "testing"` → enter testing checkpoint
-- If all tasks pass but no debugState → enter testing checkpoint
-- Otherwise → proceed with single task execution
+### 2. Check prd.json state
+- If `debugState.status == "testing"` → go to "Testing Checkpoint" section
+- If all tasks pass but no debugState → go to "Testing Checkpoint" section
+- Otherwise → continue based on mode:
+
+### 3. Route to correct section based on argument
+
+| Mode | Determined By | Go To Section |
+|------|---------------|---------------|
+| **Loop Mode** | No argument, `loop`, or `start` | "Loop Mode" (below) |
+| **Interactive Mode** | `single` or `task US-XXX` | "Implementation Loop" |
+| **Verify Mode** | `verify` | "Step 5: Run Verification" |
+
+**REMINDER:** If you are in Loop Mode (default), you MUST skip the "Implementation Loop" section and go directly to "Loop Mode" to launch the background script.
 
 ---
 
@@ -124,7 +175,110 @@ This command is designed to work **without memory** of previous runs. Context co
 
 ---
 
-## Implementation Loop
+## Loop Mode (DEFAULT - Check This First)
+
+**If you are running `/implement` with no arguments, you MUST follow this section.**
+
+You MUST launch the background script. Do NOT execute tasks interactively.
+
+### Step L1: Create Branch If Needed
+
+```bash
+# Read branch name from prd.json
+BRANCH=$(jq -r '.branchName' prd.json)
+
+# Check if branch exists locally or on remote
+if ! git show-ref --verify --quiet "refs/heads/$BRANCH" && \
+   ! git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
+  # Create and checkout branch
+  git checkout -b "$BRANCH"
+  git push -u origin "$BRANCH"
+  echo "✅ Created branch: $BRANCH"
+else
+  # Switch to existing branch
+  git checkout "$BRANCH"
+  echo "✅ On branch: $BRANCH"
+fi
+```
+
+### Step L2: Verify Script Exists
+
+```bash
+if [ ! -f .claude/scripts/implement-loop.sh ]; then
+  echo "❌ Background script not found: .claude/scripts/implement-loop.sh"
+  echo "This file is required for the default /implement behavior."
+  exit 1
+fi
+```
+
+### Step L3: Launch Background Script
+
+```bash
+# Make script executable if needed
+chmod +x .claude/scripts/implement-loop.sh
+
+# Run in background, output to log
+nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &
+LOOP_PID=$!
+echo $LOOP_PID > .claude/implement-loop.pid
+```
+
+### Step L4: Inform User and STOP
+
+Output this message and then STOP (do not continue to Implementation Loop):
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 Implementation loop started (PID: $LOOP_PID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The loop runs in the background until:
+  ✅ All tasks pass → testing checkpoint
+  ⛔ A task is blocked → needs your input
+  ⚠️  Max iterations → safety stop
+
+Monitor progress:
+  tail -f .claude/implement-loop.log
+
+Stop the loop:
+  kill $(cat .claude/implement-loop.pid)
+
+When done, run /implement to continue.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**STOP HERE if in Loop Mode.** Do not proceed to Implementation Loop.
+
+---
+
+## Interactive Mode (ESCAPE HATCH ONLY)
+
+**⚠️ WARNING: This mode breaks the Ralph pattern's fresh context principle.**
+
+Only proceed to this section if the user explicitly specified `interactive-mode`.
+
+### Why This Is Problematic
+
+When you execute tasks in a conversation:
+1. **You have memory** - You remember previous tasks, violating fresh context
+2. **You skip the memory system** - You don't need to read GitHub comments
+3. **Future sessions won't benefit** - Learnings stay in your head, not in comments
+
+### When To Use This
+
+- The background script is failing and you need to debug
+- You need to step through a specific task manually
+- You understand and accept you're breaking the pattern
+
+### Requirements Still Apply
+
+Even in interactive mode, you MUST:
+- Follow the 🚨 CRITICAL REQUIREMENTS section
+- Complete the 🛑 POST-TASK CHECKLIST after each task
+- Post task logs to GitHub with `gh issue comment`
+- Post discovery notes when patterns are found
+
+**The GitHub posting is even MORE important here** because it's the only way learnings from this session will persist for future sessions.
 
 ### Step 1: Load Context
 
@@ -257,6 +411,30 @@ Acceptance criteria: all passing"
 
 git push
 ```
+
+---
+
+### 🛑 POST-TASK CHECKLIST - STOP AND VERIFY
+
+**STOP. Do not proceed until ALL items are completed.**
+
+Before moving to the next task, verify you have done ALL of the following:
+
+| # | Item | Required | Done? |
+|---|------|----------|-------|
+| 1 | **Run verify commands** | All commands in `verifyCommands` executed | ☐ |
+| 2 | **Update prd.json** | `passes`, `attempts`, `lastAttempt` updated | ☐ |
+| 3 | **Commit implementation** | Code changes committed with task reference | ☐ |
+| 4 | **Commit prd.json** | Status update committed | ☐ |
+| 5 | **Push to remote** | `git push` completed | ☐ |
+| 6 | **Post task log to GitHub** | `gh issue comment` with `## 📝 Task Log` posted | ☐ |
+| 7 | **Post discovery note** | If patterns found, `## 🔍 Discovery Note` posted | ☐ |
+
+**⚠️ If you skip the GitHub posting steps, the task is NOT complete.**
+
+The GitHub comments are the memory system - without them, future sessions won't know what was learned.
+
+---
 
 ### Step 8: Post Task Log to Issue
 
@@ -401,46 +579,13 @@ This provides directory-specific context for future AI iterations.
 
 ---
 
-## Loop Mode
+## Loop Mode Reference
 
-When `/implement loop` is invoked, launch the background script for autonomous execution:
+**See "Loop Mode (DEFAULT - Check This First)" section above for launch instructions.**
 
-### Step 1: Launch Background Script
+This section provides additional reference information about how the background script works.
 
-```bash
-# Make script executable if needed
-chmod +x .claude/scripts/implement-loop.sh
-
-# Run in background, output to log
-nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &
-LOOP_PID=$!
-echo $LOOP_PID > .claude/implement-loop.pid
-```
-
-### Step 2: Inform User
-
-Output:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Implementation loop started (PID: $LOOP_PID)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The loop runs in the background until:
-  ✅ All tasks pass → testing checkpoint
-  ⛔ A task is blocked → needs your input
-  ⚠️  Max iterations → safety stop
-
-Monitor progress:
-  tail -f .claude/implement-loop.log
-
-Stop the loop:
-  kill $(cat .claude/implement-loop.pid)
-
-When done, run /implement to continue.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### Step 3: User Returns Later
+### When User Returns After Loop
 
 When user runs `/implement` after loop completes:
 - Check if `debugState.status == "testing"` or all tasks pass
@@ -604,7 +749,7 @@ Output:
 
 Great news - implementation confirmed working.
 
-Run /issue close to:
+Run /il_3_close to:
   📊 Generate summary report
   🔀 Create Pull Request
   🚀 Prepare for merge

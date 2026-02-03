@@ -16,11 +16,11 @@ This is a meta-project that provides a complete workflow system for AI-assisted 
    - Provides task design guidelines
 
 2. **Command Skills** (`.claude/commands/`)
-   - `/issue setup` - Creates GitHub labels and templates
-   - `/issues` - Lists open issues using GitHub CLI
-   - `/issue N` - **Full flow:** loads issue → scopes → plans → approves (with inline prompts)
-   - `/implement` - Executes tasks in a fresh context loop
-   - `/issue close` - Creates final summary and pull request
+   - `/il_setup` - Creates GitHub labels and templates
+   - `/il_list` - Lists open issues using GitHub CLI
+   - `/il_1_plan N` - **Full flow:** loads issue → scopes → plans → approves (with inline prompts)
+   - `/il_2_implement` - Executes tasks in a fresh context loop
+   - `/il_3_close` - Creates final summary, PR, and archives after merge
 
 3. **State Management**
    - `prd.json` - Machine-readable task state (generated on plan approval)
@@ -31,7 +31,7 @@ This is a meta-project that provides a complete workflow system for AI-assisted 
 
 This workflow implements autonomous AI loops with three key principles:
 
-1. **Fresh Context Per Iteration**: Each `/implement` run starts with zero memory. Context comes only from prd.json, git history, and GitHub comments.
+1. **Fresh Context Per Iteration**: Each `/il_2_implement` run starts with zero memory. Context comes only from prd.json, git history, and GitHub comments.
 
 2. **Testable Tasks**: Every task has automated verification commands. Acceptance criteria must be programmatically verifiable (not subjective).
 
@@ -42,7 +42,7 @@ This workflow implements autonomous AI loops with three key principles:
 This project is designed to be installed into other repositories. Installation workflow:
 
 1. Run `./install.sh <target-directory>` OR manually copy `.claude/` directory
-2. In target project, run `/issue setup` to create labels
+2. In target project, run `/il_setup` to create labels
 3. Configure Pipedream workflow (see `pipedream/github-to-claude-plan.md`)
 4. Update target project's CLAUDE.md to reference workflow rules
 
@@ -55,21 +55,21 @@ This project is designed to be installed into other repositories. Installation w
 4. Review and approve plan
 
 ### Manual Implementation (via Claude Code)
-1. `/issues` - List open issues
-2. `/issue 42` - **Guided flow:** scope → plan → approve (all with inline prompts)
-3. `/implement start` - Create branch `ai/issue-{number}-{slug}` and begin
-4. `/implement` - Execute next failing task (loops until all pass, then testing checkpoint)
-5. `/issue close` - Generate final summary and create PR after testing verified
+1. `/il_list` - List open issues
+2. `/il_1_plan 42` - **Guided flow:** scope → plan → approve (all with inline prompts)
+3. `/il_2_implement start` - Create branch `ai/issue-{number}-{slug}` and begin
+4. `/il_2_implement` - Execute next failing task (loops until all pass, then testing checkpoint)
+5. `/il_3_close` - Generate final summary, create PR, and archive after merge
 
-### The /issue Flow
-When `/issue N` is run:
+### The /il_1_plan Flow
+When `/il_1_plan N` is run:
 1. **Evaluate** - Score issue 0-10 on completeness (What, Where, Why, Scope, Acceptance)
 2. **Scope** - If score < 8, ask 1-3 multiple-choice questions to gather requirements
 3. **Plan** - Enter native plan mode to design implementation
 4. **Approve** - Ask "Approve this plan?" then generate prd.json
 5. **Prompt** - Ask "Ready to implement?" to continue
 
-Use `/issue N --quick` to skip to status check for issues already in progress.
+Use `/il_1_plan N --quick` to skip to status check for issues already in progress.
 
 ## Key Files
 
@@ -89,9 +89,9 @@ Use `/issue N --quick` to skip to status check for issues already in progress.
 ### State Persistence
 | Source | Contains | Created By |
 |--------|----------|------------|
-| `prd.json` | Task definitions, pass/fail status, verify commands | `/plan approve` |
-| GitHub Comments | Task logs, discovery notes, learnings | `/implement` |
-| Git History | Implementation commits | `/implement` |
+| `prd.json` | Task definitions, pass/fail status, verify commands | `/il_1_plan` (on approval) |
+| GitHub Comments | Task logs, discovery notes, learnings | `/il_2_implement` |
+| Git History | Implementation commits | `/il_2_implement` |
 
 ### Comment Prefixes
 - `## 📋 Implementation Plan` - Initial plan (human-readable)
@@ -133,14 +133,14 @@ If a session ends mid-implementation:
 ```bash
 cat prd.json | jq '.userStories[] | {id, passes, attempts}'  # Check state
 git log --oneline -5                                          # Review commits
-/implement                                                    # Resume
+/il_2_implement                                               # Resume
 ```
 
 If a task fails 3 times:
 - Issue labeled `AI: Blocked`
 - Task log explains failure
 - Human adds guidance in issue comments
-- Run `/implement` to retry with new context
+- Run `/il_2_implement` to retry with new context
 
 ## This is a Meta-Project
 

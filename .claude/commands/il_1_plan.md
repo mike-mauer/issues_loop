@@ -1,13 +1,13 @@
-# /issue - Load, Scope, and Plan GitHub Issue
+# /il_1_plan - Load, Scope, and Plan GitHub Issue
 
 ## Description
-Loads a GitHub issue, evaluates completeness, gathers missing requirements via scoping questions, and guides through planning and approval. This is the primary entry point for the workflow - it handles the full journey from issue to approved plan.
+Loads a GitHub issue, evaluates completeness, gathers missing requirements via scoping questions, and guides through planning and approval. This is Step 1 of the core workflow - it handles the full journey from issue to approved plan.
 
 ## Usage
 ```
-/issue 42             # Load and evaluate issue
-/issue #42            # Same, with # prefix
-/issue 42 --quick     # Skip scoping, load as-is
+/il_1_plan 42             # Load and evaluate issue
+/il_1_plan #42            # Same, with # prefix
+/il_1_plan 42 --quick     # Skip scoping, load as-is
 ```
 
 ## Arguments
@@ -430,7 +430,7 @@ Progress:
   ✅ US-001: Add email validation util
   🎯 US-002: Update login form (next)
 
-Run /implement to continue with US-002
+Run /il_2_implement to continue with US-002
 ```
 
 ---

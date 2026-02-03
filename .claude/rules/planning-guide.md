@@ -1,6 +1,6 @@
 # Planning Guide (Ralph Pattern)
 
-This document provides guidance on creating implementation plans that follow the Ralph pattern. It is used as reference during the planning phase triggered by `/issue N`.
+This document provides guidance on creating implementation plans that follow the Ralph pattern. It is used as reference during the planning phase triggered by `/il_1_plan N`.
 
 ---
 
@@ -316,7 +316,7 @@ Create in repo root:
    
    **prd.json generated** with 6 testable tasks.
    
-   Implementation ready. Run `/implement` to begin the loop.
+   Implementation ready. Run `/il_2_implement` to begin the loop.
    
    Task Status:
    - [ ] US-001: Create user database schema
@@ -393,7 +393,7 @@ Every task should have commands that can prove success:
 
 | Error | Response |
 |-------|----------|
-| No issue loaded | "Run `/issue {number}` first" |
+| No issue loaded | "Run `/il_1_plan {number}` first" |
 | Plan already exists | Show existing, offer to edit |
 | Task too large | Suggest splitting with specific guidance |
 | No verify commands possible | Flag for manual verification |
