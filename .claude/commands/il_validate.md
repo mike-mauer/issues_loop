@@ -1,11 +1,11 @@
-# /issue validate - Check Workflow Prerequisites
+# /il_validate - Check Workflow Prerequisites
 
 ## Description
-Performs read-only validation of all workflow prerequisites without making any changes. Use this to diagnose setup issues or verify configuration before starting work.
+Performs read-only validation of all workflow prerequisites without making any changes. Use this utility command to diagnose setup issues or verify configuration before starting work.
 
 ## Usage
 ```
-/issue validate           # Run all validation checks
+/il_validate           # Run all validation checks
 ```
 
 ## Validation Steps

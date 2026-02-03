@@ -1,7 +1,7 @@
-# /implement - Execute Task Loop (Ralph Pattern)
+# /il_2_implement - Execute Task Loop (Ralph Pattern)
 
 ## Description
-Executes the implementation loop following the Ralph pattern. **By default, launches a background loop** that autonomously executes all tasks until complete or blocked.
+Executes the implementation loop following the Ralph pattern. **By default, launches a background loop** that autonomously executes all tasks until complete or blocked. This is Step 2 of the core workflow.
 
 The loop script (`.claude/scripts/implement-loop.sh`) provides:
 - Fresh context per task (calls Claude CLI for each)
@@ -19,8 +19,8 @@ For each task, the loop:
 
 ## Usage
 ```
-/implement              # Create branch if needed + launch background loop
-/implement verify       # Re-run verification for current task
+/il_2_implement              # Create branch if needed + launch background loop
+/il_2_implement verify       # Re-run verification for current task
 ```
 
 **There is only one mode: Loop Mode.** This command:

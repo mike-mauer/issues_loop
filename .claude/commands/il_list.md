@@ -1,13 +1,13 @@
-# /issues - List Open GitHub Issues
+# /il_list - List Open GitHub Issues
 
 ## Description
-Fetches and displays all open GitHub issues from the current repository, allowing you to select one for implementation.
+Fetches and displays all open GitHub issues from the current repository, allowing you to select one for implementation. This is a utility command to discover available issues.
 
 ## Usage
 ```
-/issues
-/issues --label AI
-/issues --assignee @me
+/il_list
+/il_list --label AI
+/il_list --assignee @me
 ```
 
 ## Workflow

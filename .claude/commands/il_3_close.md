@@ -1,16 +1,16 @@
-# /issue close - Generate Final Report and Create PR
+# /il_3_close - Generate Final Report and Create PR
 
 ## Description
-Generates a comprehensive final report from `prd.json` and issue comments, summarizing all implementation work. Creates a Pull Request linking to the issue.
+Generates a comprehensive final report from `prd.json` and issue comments, summarizing all implementation work. Creates a Pull Request linking to the issue. This is Step 3 (final step) of the core workflow.
 
 **Important:** This command requires the implementation to have been verified through the testing checkpoint. Use `--force` to bypass this requirement.
 
 ## Usage
 ```
-/issue close              # Generate report and create PR (requires verified status)
-/issue close --force      # Bypass verification requirement
-/issue close preview      # Preview report without posting
-/issue close close        # Generate report, create PR, close issue
+/il_3_close              # Generate report and create PR (requires verified status)
+/il_3_close --force      # Bypass verification requirement
+/il_3_close preview      # Preview report without posting
+/il_3_close archive      # Generate report, create PR, close issue, and archive
 ```
 
 ## Prerequisites
