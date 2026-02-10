@@ -273,28 +273,49 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
 
   # ─── Post-task orchestration: enqueue discovered tasks + compaction ───
 
-  # Extract discovered tasks from output (parse JSON events from Claude's response)
-  # Look for Event JSON block in the output to get discovered array
-  DISCOVERED_JSON=""
+  # Extract and validate Event JSON from Claude's output
+  PARSED_EVENT=""
+  EVENT_VERIFIED=0
   if [ "$RESULT" = "PASS" ] || [ "$RESULT" = "RETRY" ]; then
-    DISCOVERED_JSON=$(echo "$OUTPUT" | extract_json_events_from_issue_comments | \
-      jq -s '[.[].discovered[]? // empty]' 2>/dev/null || echo "[]")
-    if [ -n "$DISCOVERED_JSON" ] && [ "$DISCOVERED_JSON" != "[]" ] && [ "$DISCOVERED_JSON" != "null" ]; then
-      log "Discovered tasks found, enqueuing..."
-      enqueue_discovered_tasks "$PRD_FILE" "$NEXT_TASK" "$TASK_UID" "$TASK_PRIORITY" "$DISCOVERED_JSON" "$ISSUE_NUMBER"
-      log "$ICON_SUCCESS Discovered tasks enqueued"
+    PARSED_EVENT=$(echo "$OUTPUT" | extract_json_events_from_issue_comments 2>/dev/null | head -1)
+
+    if [ -n "$PARSED_EVENT" ]; then
+      # Enforce UID correctness: validate parsed taskUid matches injected $TASK_UID
+      PARSED_UID=$(echo "$PARSED_EVENT" | jq -r '.taskUid // ""' 2>/dev/null)
+      if [ "$PARSED_UID" != "$TASK_UID" ]; then
+        log "$ICON_WARN Event JSON taskUid mismatch: got '$PARSED_UID', expected '$TASK_UID' — patching"
+        PARSED_EVENT=$(echo "$PARSED_EVENT" | jq -c --arg uid "$TASK_UID" '.taskUid = $uid' 2>/dev/null || echo "")
+      fi
+
+      if [ -n "$PARSED_EVENT" ]; then
+        EVENT_VERIFIED=1
+
+        # Extract discovered tasks only from validated event
+        DISCOVERED_JSON=$(echo "$PARSED_EVENT" | jq -c '[.discovered[]? // empty]' 2>/dev/null || echo "[]")
+        if [ -n "$DISCOVERED_JSON" ] && [ "$DISCOVERED_JSON" != "[]" ] && [ "$DISCOVERED_JSON" != "null" ]; then
+          log "Discovered tasks found, enqueuing..."
+          enqueue_discovered_tasks "$PRD_FILE" "$NEXT_TASK" "$TASK_UID" "$TASK_PRIORITY" "$DISCOVERED_JSON" "$ISSUE_NUMBER"
+          log "$ICON_SUCCESS Discovered tasks enqueued"
+        fi
+      fi
+    fi
+
+    if [ "$EVENT_VERIFIED" -eq 0 ]; then
+      log "$ICON_WARN No valid Event JSON found in output — skipping compaction increment"
     fi
   fi
 
-  # Check result and run compaction after pass/retry (task log was posted by Claude)
+  # Check result; only run compaction if event was verified (confirms task log was posted)
   if [ "$RESULT" = "PASS" ]; then
     log ""
     log "$LINE_HEAVY"
     log "$ICON_SUCCESS $NEXT_TASK passed! Moving to next task..."
     log "$LINE_HEAVY"
 
-    # Compaction: increment counter, post summary if threshold reached
-    maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    # Compaction: only increment counter if task log was confirmed via Event JSON
+    if [ "$EVENT_VERIFIED" -eq 1 ]; then
+      maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    fi
     git push 2>/dev/null || true
 
   elif [ "$RESULT" = "BLOCKED" ]; then
@@ -310,8 +331,10 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
     log ""
     log "$ICON_RETRY $NEXT_TASK failed verification, retrying..."
 
-    # Still run compaction counter (a task log was posted even on failure)
-    maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    # Compaction: only increment counter if task log was confirmed via Event JSON
+    if [ "$EVENT_VERIFIED" -eq 1 ]; then
+      maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    fi
     git push 2>/dev/null || true
 
     # Don't increment iteration for retries within same task
