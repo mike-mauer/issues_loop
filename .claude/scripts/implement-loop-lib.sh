@@ -384,3 +384,321 @@ enqueue_discovered_tasks() {
 
   return 0
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Compaction Summary
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Increment the compaction counter and post a compacted summary when the
+# threshold is reached (default: every 5 task logs).
+#
+# Call this after every successful task log post. It:
+#   1. Increments prd.json.compaction.taskLogCountSinceLastSummary
+#   2. If count >= summaryEveryNTaskLogs (default 5):
+#      a. Collects covered task UIDs and attempt numbers from recent task logs
+#      b. Finds previous compaction summary comment URL (supersedes pointer, or 'none')
+#      c. Posts '## 🧾 Compacted Summary' to the GitHub issue
+#      d. Resets counter to 0
+#   3. Commits prd.json state update
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - issue number
+#   $3 - task id just completed (e.g., "US-003")
+#   $4 - task uid just completed
+#   $5 - attempt number for the just-completed task
+#
+# Side effects: modifies prd.json, may post GitHub comment, commits state
+maybe_post_compaction_summary() {
+  local prd_file="${1:-prd.json}"
+  local issue_number="$2"
+  local task_id="$3"
+  local task_uid="$4"
+  local attempt="$5"
+
+  if [ ! -f "$prd_file" ]; then
+    return 1
+  fi
+
+  # Increment taskLogCountSinceLastSummary
+  jq '.compaction.taskLogCountSinceLastSummary = ((.compaction.taskLogCountSinceLastSummary // 0) + 1)' \
+    "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+  local current_count
+  current_count=$(jq '.compaction.taskLogCountSinceLastSummary // 0' "$prd_file")
+
+  local threshold
+  threshold=$(jq '.compaction.summaryEveryNTaskLogs // 5' "$prd_file")
+
+  # Check if we've hit the threshold
+  if [ "$current_count" -lt "$threshold" ]; then
+    # Not yet time for a summary - just commit the counter update
+    git add "$prd_file"
+    git commit -m "chore: update compaction counter ($current_count/$threshold) (#$issue_number)" 2>/dev/null || true
+    return 0
+  fi
+
+  # Time to post a compacted summary!
+
+  # Collect covered task UIDs and attempts from recent task logs
+  # Parse JSON events from issue comments to find recent task logs
+  local comments
+  comments=$(gh issue view "$issue_number" --json comments --jq '.comments[] | .body' 2>/dev/null || echo "")
+
+  local covered_tasks=""
+  local json_events
+  json_events=$(extract_json_events_from_issue_comments "$comments")
+
+  if [ -n "$json_events" ]; then
+    # Extract task UIDs and attempts from JSON events
+    covered_tasks=$(echo "$json_events" | while IFS= read -r event; do
+      local tid tuid status att
+      tid=$(echo "$event" | jq -r '.taskId // ""' 2>/dev/null)
+      tuid=$(echo "$event" | jq -r '.taskUid // ""' 2>/dev/null)
+      status=$(echo "$event" | jq -r '.status // ""' 2>/dev/null)
+      att=$(echo "$event" | jq -r '.attempt // 0' 2>/dev/null)
+      if [ -n "$tid" ]; then
+        echo "- **${tid}** (uid: \`${tuid}\`) — attempt ${att}, status: ${status}"
+      fi
+    done)
+  fi
+
+  # If no JSON events found, fall back to parsing prd.json for task status
+  if [ -z "$covered_tasks" ]; then
+    covered_tasks=$(jq -r '.userStories[] | select(.attempts > 0) |
+      "- **\(.id)** (uid: `\(.uid // "unknown")`) — attempt \(.attempts), status: \(if .passes then "pass" else "fail" end)"' "$prd_file")
+  fi
+
+  # Find previous compaction summary comment URL (or 'none')
+  local previous_summary_url="none"
+  local summary_comment_url
+  summary_comment_url=$(gh issue view "$issue_number" --json comments \
+    --jq '[.comments[] | select(.body | startswith("## 🧾 Compacted Summary")) | .url] | last // empty' 2>/dev/null || echo "")
+
+  if [ -n "$summary_comment_url" ]; then
+    previous_summary_url="$summary_comment_url"
+  fi
+
+  # Collect key decisions and patterns from discovery notes
+  local discoveries=""
+  discoveries=$(gh issue view "$issue_number" --json comments \
+    --jq '[.comments[] | select(.body | startswith("## 🔍 Discovery Note")) | .body] | join("\n---\n")' 2>/dev/null || echo "")
+
+  # Build the compacted summary comment body
+  local summary_body
+  summary_body="## 🧾 Compacted Summary
+
+**Issue:** #${issue_number}
+**Timestamp:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+**Covers:** ${current_count} task logs since last summary
+**Supersedes:** ${previous_summary_url}
+
+### Covered Tasks (UIDs and Attempts)
+${covered_tasks:-No task data available}
+
+### Canonical Decisions and Patterns
+${discoveries:-No discovery notes found}
+
+### Open Risks
+$(jq -r '[.userStories[] | select(.passes == false)] | if length == 0 then "None — all tasks passing" else map("- \(.id): \(.title) (attempt \(.attempts))") | join("\n") end' "$prd_file")
+
+### Current Progress
+$(jq -r '
+  (.userStories | length) as $total |
+  ([.userStories[] | select(.passes == true)] | length) as $passed |
+  "\($passed)/\($total) tasks passing (\($passed * 100 / (if $total == 0 then 1 else $total end))%)"
+' "$prd_file")"
+
+  # Post the compacted summary to the issue
+  if gh issue comment "$issue_number" --body "$summary_body" 2>/dev/null; then
+    # Reset the counter to 0
+    jq '.compaction.taskLogCountSinceLastSummary = 0' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+    git add "$prd_file"
+    git commit -m "chore: post compacted summary, reset counter (#$issue_number)" 2>/dev/null || true
+  else
+    # Post failed — retain counter, will retry on next task log
+    git add "$prd_file"
+    git commit -m "chore: compaction post failed, retaining counter (#$issue_number)" 2>/dev/null || true
+  fi
+
+  return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Wisp Support
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Collect active (non-expired) wisps from issue comments.
+# Filters wisp comments by their expiresAt timestamp, excluding any that have
+# expired. Invalid or unparseable expiresAt values are treated as expired.
+#
+# Args:
+#   $1 - issue number
+#
+# Output: one wisp JSON object per line (only active/non-expired wisps)
+collect_active_wisps() {
+  local issue_number="$1"
+  local now_epoch
+  now_epoch=$(date +%s)
+
+  # Fetch all wisp comments from the issue
+  local wisp_bodies
+  wisp_bodies=$(gh issue view "$issue_number" --json comments \
+    --jq '.comments[] | select(.body | startswith("## 🪶 Wisp")) | .body' 2>/dev/null || echo "")
+
+  if [ -z "$wisp_bodies" ]; then
+    return 0
+  fi
+
+  # Parse each wisp comment to extract the JSON payload and check expiration
+  echo "$wisp_bodies" | while IFS= read -r body; do
+    # Skip empty lines
+    [ -z "$body" ] && continue
+
+    # Extract fenced json block from the wisp comment body
+    local wisp_json
+    wisp_json=$(echo "$body" | sed -n '/^```json/,/^```/{/^```/d;p}' | head -1)
+
+    if [ -z "$wisp_json" ]; then
+      continue
+    fi
+
+    # Validate JSON
+    if ! echo "$wisp_json" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+      continue
+    fi
+
+    # Check if promoted (skip promoted wisps)
+    local promoted
+    promoted=$(echo "$wisp_json" | jq -r '.promoted // false' 2>/dev/null)
+    if [ "$promoted" = "true" ]; then
+      continue
+    fi
+
+    # Check expiresAt timestamp
+    local expiresAt
+    expiresAt=$(echo "$wisp_json" | jq -r '.expiresAt // ""' 2>/dev/null)
+
+    if [ -z "$expiresAt" ]; then
+      # No expiresAt — treat as expired (safety: wisps must have expiration)
+      continue
+    fi
+
+    # Parse expiresAt to epoch seconds
+    local expires_epoch
+    expires_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$expiresAt" +%s 2>/dev/null || \
+                    date -d "$expiresAt" +%s 2>/dev/null || \
+                    echo "0")
+
+    if [ "$expires_epoch" -eq 0 ]; then
+      # Unparseable expiresAt — treat as expired
+      continue
+    fi
+
+    # Only include non-expired wisps
+    if [ "$expires_epoch" -gt "$now_epoch" ]; then
+      echo "$wisp_json"
+    fi
+  done
+}
+
+# Promote a wisp to a durable artifact. Two promotion paths:
+#   1. "discovery" - Convert the wisp into a Discovery Note comment
+#   2. "task"      - Enqueue the wisp content as a new discovered task
+#
+# In both cases, the original wisp comment is updated to set promoted:true.
+#
+# Args:
+#   $1 - issue number
+#   $2 - wisp JSON object (compact, single line)
+#   $3 - promotion type: "discovery" or "task"
+#   $4 - path to prd.json (default: "prd.json") - only needed for "task" promotion
+#   $5 - parent task uid (for "task" promotion, sets discoveredFrom)
+#
+# Side effects: posts GitHub comment, may modify prd.json
+promote_wisp() {
+  local issue_number="$1"
+  local wisp_json="$2"
+  local promotion_type="$3"
+  local prd_file="${4:-prd.json}"
+  local parent_uid="$5"
+
+  local wisp_id
+  wisp_id=$(echo "$wisp_json" | jq -r '.id // ""' 2>/dev/null)
+  local wisp_note
+  wisp_note=$(echo "$wisp_json" | jq -r '.note // ""' 2>/dev/null)
+  local wisp_task_uid
+  wisp_task_uid=$(echo "$wisp_json" | jq -r '.taskUid // ""' 2>/dev/null)
+
+  if [ -z "$wisp_id" ] || [ -z "$wisp_note" ]; then
+    return 1
+  fi
+
+  if [ "$promotion_type" = "discovery" ]; then
+    # Promote to Discovery Note
+    local discovery_body="## 🔍 Discovery Note
+
+**Promoted from wisp:** \`${wisp_id}\`
+**Original task:** \`${wisp_task_uid}\`
+**Timestamp:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+### Pattern Discovered
+${wisp_note}
+
+### Source
+Promoted from ephemeral wisp to durable discovery note."
+
+    gh issue comment "$issue_number" --body "$discovery_body" 2>/dev/null || return 1
+
+  elif [ "$promotion_type" = "task" ]; then
+    # Promote to new discovered task via enqueue
+    local discovered_task_json
+    discovered_task_json=$(jq -nc \
+      --arg title "Promoted wisp: ${wisp_note:0:60}" \
+      --arg desc "$wisp_note" \
+      '[{"title": $title, "description": $desc, "acceptanceCriteria": ["Wisp requirement addressed"], "verifyCommands": [], "dependsOn": []}]')
+
+    # Find parent task id from uid
+    local parent_id
+    parent_id=$(jq -r --arg uid "$parent_uid" \
+      '.userStories[] | select(.uid == $uid) | .id // "US-001"' "$prd_file" 2>/dev/null)
+    local parent_priority
+    parent_priority=$(jq -r --arg uid "$parent_uid" \
+      '.userStories[] | select(.uid == $uid) | .priority // 1' "$prd_file" 2>/dev/null)
+
+    enqueue_discovered_tasks "$prd_file" "$parent_id" "${parent_uid:-null}" "$parent_priority" "$discovered_task_json" "$issue_number"
+
+  else
+    return 1
+  fi
+
+  # Mark the original wisp as promoted by finding and updating the comment
+  # We search for the wisp comment by its id and update promoted to true
+  local updated_wisp
+  updated_wisp=$(echo "$wisp_json" | jq -c '.promoted = true')
+
+  local comment_id
+  comment_id=$(gh issue view "$issue_number" --json comments \
+    --jq ".comments[] | select(.body | contains(\"$wisp_id\")) | .url" 2>/dev/null | head -1)
+
+  if [ -n "$comment_id" ]; then
+    # Extract numeric comment ID from URL
+    local numeric_id
+    numeric_id=$(echo "$comment_id" | grep -oE '[0-9]+$')
+    local repo
+    repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+
+    if [ -n "$numeric_id" ] && [ -n "$repo" ]; then
+      # Build the updated wisp comment body with promoted:true
+      local updated_body="## 🪶 Wisp
+
+\`\`\`json
+${updated_wisp}
+\`\`\`"
+      gh api "repos/${repo}/issues/comments/${numeric_id}" \
+        -X PATCH -f body="$updated_body" 2>/dev/null || true
+    fi
+  fi
+
+  return 0
+}
