@@ -204,3 +204,183 @@ initialize_missing_prd_fields() {
 
   return 0
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Discovered-Task Auto-Enqueue
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Compute a fingerprint hash for deduplication of discovered tasks.
+# Uses title + description + acceptanceCriteria + parent uid — NOT just title.
+#
+# Args:
+#   $1 - task title
+#   $2 - task description
+#   $3 - acceptanceCriteria (JSON array as string, e.g. '["criterion1","criterion2"]')
+#   $4 - parent task uid
+#
+# Output: 12-char hex fingerprint hash
+compute_task_fingerprint() {
+  local title="$1"
+  local description="$2"
+  local acceptance_criteria="$3"
+  local parent_uid="$4"
+
+  # Normalize: lowercase, trim, collapse whitespace
+  local norm_title norm_desc norm_criteria
+  norm_title=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{1,\}/ /g')
+  norm_desc=$(echo "$description" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{1,\}/ /g')
+  norm_criteria=$(echo "$acceptance_criteria" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{1,\}/ /g')
+
+  local input="${norm_title}|${norm_desc}|${norm_criteria}|${parent_uid}"
+  echo -n "$input" | shasum -a 256 | cut -c1-12
+}
+
+# Enqueue discovered tasks from a task log event into prd.json.
+# Deduplicates using fingerprint hash (title + description + acceptanceCriteria + parent uid).
+# Appends new tasks with generated uid, discoveredFrom=parent uid, ordinal within parent,
+# default priority=parent+1, dependsOn=[parent id].
+# Commits prd.json state update after enqueue.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - parent task id (e.g., "US-003")
+#   $3 - parent task uid (e.g., "tsk_a1b2c3d4e5f6")
+#   $4 - parent task priority (integer)
+#   $5 - discovered tasks JSON array (compact JSON string)
+#        Each element: {"title":"...","description":"...","acceptanceCriteria":[...],"verifyCommands":[...],"dependsOn":[...]}
+#   $6 - issue number
+#
+# Side effects: modifies prd.json in place, commits the change
+enqueue_discovered_tasks() {
+  local prd_file="${1:-prd.json}"
+  local parent_id="$2"
+  local parent_uid="$3"
+  local parent_priority="$4"
+  local discovered_json="$5"
+  local issue_number="$6"
+
+  if [ -z "$discovered_json" ] || [ "$discovered_json" = "[]" ] || [ "$discovered_json" = "null" ]; then
+    return 0
+  fi
+
+  local discovered_count
+  discovered_count=$(echo "$discovered_json" | jq 'length' 2>/dev/null || echo "0")
+
+  if [ "$discovered_count" -eq 0 ]; then
+    return 0
+  fi
+
+  # Count existing discovered tasks from this parent to determine ordinal offset
+  local existing_from_parent
+  existing_from_parent=$(jq --arg puid "$parent_uid" \
+    '[.userStories[] | select(.discoveredFrom == $puid)] | length' "$prd_file")
+
+  # Collect existing fingerprints for deduplication
+  local existing_fingerprints
+  existing_fingerprints=$(jq -r --arg puid "$parent_uid" \
+    '.userStories[] | select(.discoveredFrom == $puid) |
+     "\(.title)\t\(.description)\t(\(.acceptanceCriteria | join(",")))"' "$prd_file" 2>/dev/null || echo "")
+
+  # Compute fingerprints for existing tasks from this parent
+  local existing_fp_hashes=""
+  if [ -n "$existing_fingerprints" ]; then
+    while IFS=$'\t' read -r ex_title ex_desc ex_criteria; do
+      local ex_fp
+      ex_fp=$(compute_task_fingerprint "$ex_title" "$ex_desc" "$ex_criteria" "$parent_uid")
+      existing_fp_hashes="${existing_fp_hashes}${ex_fp} "
+    done <<< "$existing_fingerprints"
+  fi
+
+  # Get the next US-### id number
+  local max_id_num
+  max_id_num=$(jq '[.userStories[].id | capture("US-(?<n>[0-9]+)") | .n | tonumber] | max // 0' "$prd_file")
+
+  local enqueued=0
+  local ordinal_offset=$((existing_from_parent))
+  local new_id_num=$((max_id_num))
+
+  local i=0
+  while [ "$i" -lt "$discovered_count" ]; do
+    local d_title d_desc d_criteria_json d_criteria_str d_verify_json d_depends_json
+
+    d_title=$(echo "$discovered_json" | jq -r --argjson idx "$i" '.[$idx].title // ""')
+    d_desc=$(echo "$discovered_json" | jq -r --argjson idx "$i" '.[$idx].description // ""')
+    d_criteria_json=$(echo "$discovered_json" | jq -c --argjson idx "$i" '.[$idx].acceptanceCriteria // []')
+    d_criteria_str=$(echo "$d_criteria_json" | jq -r 'join(",")')
+    d_verify_json=$(echo "$discovered_json" | jq -c --argjson idx "$i" '.[$idx].verifyCommands // []')
+    d_depends_json=$(echo "$discovered_json" | jq -c --argjson idx "$i" '.[$idx].dependsOn // []')
+
+    # Compute fingerprint for deduplication
+    local fingerprint
+    fingerprint=$(compute_task_fingerprint "$d_title" "$d_desc" "$d_criteria_str" "$parent_uid")
+
+    # Check if this fingerprint already exists
+    if echo "$existing_fp_hashes" | grep -q "$fingerprint"; then
+      i=$((i + 1))
+      continue
+    fi
+
+    # Compute ordinal within this parent (1-based)
+    ordinal_offset=$((ordinal_offset + 1))
+    local ordinal=$ordinal_offset
+
+    # Generate uid
+    local new_uid
+    new_uid=$(generate_task_uid "$issue_number" "$d_title" "$parent_uid" "$ordinal")
+
+    # Generate next US-### id
+    new_id_num=$((new_id_num + 1))
+    local new_id
+    new_id=$(printf "US-%03d" "$new_id_num")
+
+    # Default priority = parent priority + 1
+    local new_priority=$((parent_priority + 1))
+
+    # Default dependsOn = [parent_id] unless explicitly provided
+    if [ "$d_depends_json" = "[]" ] || [ -z "$d_depends_json" ]; then
+      d_depends_json=$(jq -nc --arg pid "$parent_id" '[$pid]')
+    fi
+
+    # Append to prd.json
+    jq --arg id "$new_id" \
+       --arg uid "$new_uid" \
+       --argjson priority "$new_priority" \
+       --arg title "$d_title" \
+       --arg desc "$d_desc" \
+       --argjson criteria "$d_criteria_json" \
+       --argjson verify "$d_verify_json" \
+       --argjson depends "$d_depends_json" \
+       --arg parent_uid "$parent_uid" \
+       '.userStories += [{
+         "id": $id,
+         "uid": $uid,
+         "phase": null,
+         "priority": $priority,
+         "title": $title,
+         "description": $desc,
+         "files": [],
+         "dependsOn": $depends,
+         "discoveredFrom": $parent_uid,
+         "discoverySource": "task_log",
+         "acceptanceCriteria": $criteria,
+         "verifyCommands": $verify,
+         "passes": false,
+         "attempts": 0,
+         "lastAttempt": null
+       }]' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+    # Track this fingerprint to prevent duplicates within same batch
+    existing_fp_hashes="${existing_fp_hashes}${fingerprint} "
+    enqueued=$((enqueued + 1))
+
+    i=$((i + 1))
+  done
+
+  # Commit prd.json state update if any tasks were enqueued
+  if [ "$enqueued" -gt 0 ]; then
+    git add "$prd_file"
+    git commit -m "chore: enqueue $enqueued discovered task(s) from $parent_id (#$issue_number)" 2>/dev/null || true
+  fi
+
+  return 0
+}
