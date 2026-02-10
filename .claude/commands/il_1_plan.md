@@ -50,6 +50,53 @@ Extract the issue number from the provided argument. Check for `--quick` flag.
 gh issue view $ISSUE_NUMBER --json number,title,body,labels,state,comments,assignees,milestone
 ```
 
+### Step 2b: Detect Formula Type
+
+Auto-detect the issue formula (bugfix, feature, or refactor) based on issue text and labels. This determines the task topology used during planning.
+
+#### Formula Detection Decision Tree
+
+```
+1. Check GitHub labels first (highest priority):
+   - Labels contain "bug", "regression", "defect" → formula = "bugfix"
+   - Labels contain "refactor", "tech-debt", "cleanup" → formula = "refactor"
+   - Labels contain "feature", "enhancement", "new" → formula = "feature"
+
+2. If no label match, scan issue title + body for keywords:
+   - Bugfix keywords: bug, fix, broken, regression, error, crash, fails,
+     incorrect, wrong, unexpected, 500, 404, exception, stack trace
+     → formula = "bugfix"
+   - Refactor keywords: refactor, restructure, reorganize, extract, migrate,
+     move, rename, simplify, clean up, decouple, modularize, tech debt
+     → formula = "refactor"
+   - Feature keywords: add, create, implement, new, feature, support,
+     enable, introduce, build, enhance
+     → formula = "feature"
+
+3. If ambiguous (multiple categories match or no keywords match):
+   → formula = "feature" (default)
+```
+
+#### Formula Templates
+
+Each formula defines a default task topology and patterns. Load the matching template during planning:
+
+- **bugfix** → `templates/formulas/bugfix.md` (reproduce → fix → verify)
+- **feature** → `templates/formulas/feature.md` (schema → logic → UI → integration)
+- **refactor** → `templates/formulas/refactor.md` (analyze → extract → migrate → verify)
+
+The selected formula is persisted to `prd.json.formula` during Phase 5 (prd.json generation). Task decomposition in Phase 2 should follow the selected formula's topology and acceptance criteria patterns.
+
+#### Display Formula Detection Result
+
+```
+🔬 Formula Detection
+  Labels checked: {labels}
+  Keywords matched: {matched keywords}
+  Selected formula: {bugfix|feature|refactor}
+  Template: templates/formulas/{formula}.md
+```
+
 ### Step 3: Evaluate Completeness
 
 **Skip this step if `--quick` flag is present.**
@@ -199,6 +246,13 @@ When requirements are confirmed (or issue scored 8+), transition to planning.
 
 **Follow the Custom Planning Protocol:** See `.claude/rules/custom-planning-protocol.md` for the complete 5-phase planning system.
 
+#### Formula Integration
+
+The formula detected in Step 2b guides the entire planning process:
+- **Phase 1** includes formula detection confirmation in the Discovery Summary
+- **Phase 2** uses the formula template from `templates/formulas/{formula}.md` to guide task decomposition
+- **Phase 5** persists the selected formula to `prd.json.formula`
+
 #### Protocol Overview
 
 Execute these phases in order, using `AskUserQuestion` for checkpoints:
@@ -206,6 +260,7 @@ Execute these phases in order, using `AskUserQuestion` for checkpoints:
 ```
 Phase 1: EXPLORATION
 ├─ Analyze codebase (patterns, conventions, relevant files)
+├─ Confirm formula detection (from Step 2b)
 ├─ Display Discovery Summary to user
 └─ Checkpoint: "Exploration complete. Ready to proceed?"
 
@@ -242,6 +297,8 @@ Phase 5: PRD.JSON GENERATION
 3. **Follow the plan format** in `.claude/rules/planning-guide.md`
 4. **Post to GitHub** at Phase 4 for persistence and visibility
 5. **Generate prd.json** at Phase 5 following the schema in planning-guide.md
+6. **Apply the detected formula** - Use `templates/formulas/{formula}.md` to guide task topology
+7. **Persist formula** - Set `prd.json.formula` to the selected formula type (bugfix, feature, or refactor)
 
 #### Task Format Reference
 

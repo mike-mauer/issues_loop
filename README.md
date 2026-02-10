@@ -190,7 +190,14 @@ your-project/
 │   │   ├── il_2_implement.md  # /il_2_implement command (Step 2: Ralph Loop)
 │   │   └── il_3_close.md      # /il_3_close command (Step 3: report + PR + archive)
 │   └── scripts/
-│       └── implement-loop.sh  # Background task loop script
+│       ├── implement-loop.sh      # Background task loop orchestrator
+│       └── implement-loop-lib.sh  # Sourceable helper functions (uid, events, compaction, wisps)
+├── templates/
+│   └── formulas/
+│       ├── bugfix.md          # Bugfix formula (reproduce → fix → verify)
+│       ├── feature.md         # Feature formula (schema → logic → UI → integration)
+│       └── refactor.md        # Refactor formula (analyze → extract → migrate → verify)
+├── .issueloop.config.json     # Runtime config (comment prefixes, settings)
 ├── prd.json                   # Task state (created during plan approval)
 ```
 
@@ -236,8 +243,10 @@ This workflow uses the **Ralph Loop** pattern for autonomous implementation. Mem
 | Prefix | Purpose |
 |--------|---------|
 | `## 📋 Implementation Plan` | The structured plan |
-| `## 📝 Task Log: US-XXX` | Task completion log (pass or fail) |
+| `## 📝 Task Log: US-XXX` | Task completion log (pass or fail) with JSON event block |
 | `## 🔍 Discovery Note` | Patterns/learnings for future iterations |
+| `## 🧾 Compacted Summary` | Periodic summary of recent task logs (every 5) |
+| `## 🪶 Wisp` | Ephemeral context hint with expiration |
 | `## 🧪 Testing Checkpoint` | Request user testing |
 | `## 🔧 Debug Session` | Debug attempt |
 | `## ✅ Debug Fix Applied` | Debug fix verified |
@@ -251,10 +260,18 @@ After plan approval, `prd.json` tracks testable task state:
 {
   "issueNumber": 42,
   "branchName": "ai/issue-42-user-auth",
+  "formula": "feature",
+  "compaction": {
+    "taskLogCountSinceLastSummary": 0,
+    "summaryEveryNTaskLogs": 5
+  },
   "userStories": [
     {
       "id": "US-001",
+      "uid": "tsk_a1b2c3d4e5f6",
       "title": "Create user model",
+      "discoveredFrom": null,
+      "discoverySource": null,
       "acceptanceCriteria": ["Migration creates users table", "npm run typecheck passes"],
       "verifyCommands": ["npm run db:migrate", "npm run typecheck"],
       "passes": false,
@@ -280,6 +297,89 @@ Every criterion must be **automatically verifiable**:
 - ✅ "npm run typecheck passes"
 - ✅ "npm run test -- auth passes"
 - ❌ "Code is clean" (subjective)
+
+## 🧬 Formulas (Issue Type Detection)
+
+During planning (`/il_1_plan`), the issue type is auto-detected and stored as a **formula** in `prd.json.formula`. The formula constrains task decomposition to a proven topology for that issue type.
+
+| Formula | Topology | Keyword Triggers |
+|---------|----------|-----------------|
+| **bugfix** | reproduce → fix → verify | bug, fix, broken, regression |
+| **feature** | schema → logic → UI → integration | add, create, implement, new |
+| **refactor** | analyze → extract → migrate → verify | refactor, restructure, extract, migrate |
+
+**Detection priority:** Issue labels (highest) → keyword scan of title/body → default to `feature`.
+
+Formula templates are stored in `templates/formulas/` and define default task phases, acceptance criteria patterns, and verify command patterns for each type.
+
+## 📊 Structured Task Log Events (JSON Event Block)
+
+Every `## 📝 Task Log` comment includes a machine-readable `### Event JSON` section containing a fenced JSON code block:
+
+````markdown
+### Event JSON
+```json
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
+```
+````
+
+The loop parser uses a **two-phase extraction strategy**:
+1. **JSON event extraction (preferred):** Parse the fenced `json` block under `### Event JSON` heading only. All other JSON in the comment is ignored.
+2. **Legacy markdown fallback:** If no Event JSON block is found, fall back to parsing the human-readable markdown sections (`**Status:**`, `**Attempt:**`, etc.).
+
+This ensures backward compatibility with task logs written before the JSON event format was introduced.
+
+## 🔍 Discovered-Task Auto-Enqueue
+
+During implementation, tasks may discover additional work needed. These **discovered tasks** are automatically enqueued into `prd.json` within the same issue loop — no human intervention required.
+
+### How It Works
+1. A task reports discovered work in its JSON event `discovered` array
+2. The loop deduplicates using a **fingerprint hash** of `title + description + acceptanceCriteria + parent uid`
+3. New tasks are appended to `prd.json.userStories` with:
+   - Generated `uid` (deterministic hash)
+   - `discoveredFrom` set to the parent task's `uid`
+   - `priority` = parent priority + 1
+   - `dependsOn` = [parent task id]
+4. `prd.json` is committed before the next task selection
+
+Duplicate discovered tasks (matching fingerprint) are silently skipped and noted in the task log.
+
+## 🧾 Compaction Summaries
+
+As task logs accumulate on an issue, the thread can grow long. **Compaction** automatically posts periodic summaries to keep context lean.
+
+### Cadence
+- A `## 🧾 Compacted Summary` is posted every **5 task logs** (configurable via `summaryEveryNTaskLogs` in `.issueloop.config.json`)
+- The counter is tracked in `prd.json.compaction.taskLogCountSinceLastSummary`
+- After posting, the counter resets to 0
+
+### Summary Contents
+- **Covered task UIDs and attempt counts** — which tasks are summarized
+- **Canonical decisions and patterns** discovered so far
+- **Open risks** identified during implementation
+- **Supersedes pointer** — URL of the previous compaction summary (or "none" for the first)
+
+The loop uses the latest compacted summary as primary historical context, reducing the need to re-read all individual task logs.
+
+## 🪶 Wisps (Ephemeral Context Hints)
+
+Wisps are **short-lived** context hints posted as `## 🪶 Wisp` comments on the issue. They carry a time-to-live and are intended for transient observations that may not warrant permanent documentation.
+
+### Format
+```json
+{"v":1,"type":"wisp","id":"wsp_...","taskUid":"tsk_...","note":"...","expiresAt":"2026-02-10T20:00:00Z","promoted":false}
+```
+
+### Lifecycle Rules
+1. **Creation:** Posted during task execution when transient context is worth sharing
+2. **Expiration:** Each wisp has an `expiresAt` timestamp. Expired wisps are silently ignored during loop context assembly
+3. **Promotion (only path to durability):**
+   - **To Discovery Note:** Convert the wisp into a `## 🔍 Discovery Note` and mark `promoted: true`
+   - **To New Task:** Enqueue the wisp content as a discovered task and mark `promoted: true`
+4. **Un-promoted wisps are lost on expiration** — there is no automatic archival or recovery
+
+Default TTL is 90 minutes (configurable via `wispDefaultTtlMinutes` in `.issueloop.config.json`).
 
 ## 🧪 Testing Checkpoint
 

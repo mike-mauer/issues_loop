@@ -71,6 +71,8 @@ Issues progress through these labels:
 | `## ✅ Plan Approved` | Approval confirmation | Plan approval |
 | `## 📝 Task Log: US-XXX` | Task completion record | After each task attempt |
 | `## 🔍 Discovery Note` | Patterns/learnings for future tasks | When patterns discovered |
+| `## 🧾 Compacted Summary` | Periodic summary of recent task logs | Every N task logs (default 5) |
+| `## 🪶 Wisp` | Ephemeral context hint with expiration | During task execution |
 | `## 🧪 Testing Checkpoint` | Request manual testing | All tasks pass |
 | `## 🔧 Debug Session` | Document debug attempt | User reports issue |
 | `## ✅ Debug Fix Applied` | Document successful fix | Debug fix verified |
@@ -103,7 +105,68 @@ Issues progress through these labels:
 
 ### Next Attempt Should (if failed)
 [Specific guidance for retry]
+
+### Event JSON
+```json
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
 ```
+```
+
+The `### Event JSON` section is **required** in every task log comment. It contains a single compact JSON object inside a fenced `json` code block.
+
+#### Event JSON Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `v` | number | Schema version (currently `1`) |
+| `type` | string | Always `"task_log"` for task logs |
+| `issue` | number | GitHub issue number |
+| `taskId` | string | Human-readable task ID (e.g., `"US-003"`) |
+| `taskUid` | string | Deterministic task uid (e.g., `"tsk_a1b2c3d4e5f6"`) |
+| `status` | string | `"pass"` or `"fail"` |
+| `attempt` | number | Attempt number for this task |
+| `commit` | string | Git commit hash (empty string if failed) |
+| `verify` | object | `{ "passed": [...], "failed": [...] }` — verify command results |
+| `discovered` | array | Discovered task objects to auto-enqueue (empty array if none) |
+| `ts` | string | ISO 8601 timestamp |
+
+#### Parser Rules
+
+The loop parser uses a **two-phase extraction strategy**:
+
+1. **JSON event extraction (preferred):** Look for a fenced `json` code block under the `### Event JSON` heading. Extract **only** that fenced block. Ignore all other JSON that may appear elsewhere in the comment (e.g., in code examples or inline snippets).
+
+2. **Legacy markdown fallback:** If no `### Event JSON` heading or fenced block is found (e.g., for task logs written before this format was introduced), fall back to parsing the human-readable markdown sections (`**Status:**`, `**Attempt:**`, `**Commit:**`, etc.).
+
+This fallback ensures backward compatibility with existing task log comments that do not include the Event JSON block.
+
+---
+
+## Wisp Comments
+
+Wisps (`## 🪶 Wisp`) are **ephemeral** context hints with a time-to-live. They provide short-lived notes that are useful within a narrow window but should not persist as permanent project knowledge.
+
+### Wisp Format
+```markdown
+## 🪶 Wisp
+
+```json
+{"v":1,"type":"wisp","id":"wsp_...","taskUid":"tsk_...","note":"...","expiresAt":"2026-02-10T20:00:00Z","promoted":false}
+```
+```
+
+### Wisp Lifecycle Rules
+
+1. **Creation:** Posted as a GitHub issue comment during task execution when transient context is worth sharing.
+2. **Expiration:** Each wisp has an `expiresAt` timestamp. Expired wisps are **silently ignored** during loop context assembly.
+3. **Promotion (the only path to durability):** A wisp becomes durable **only** through explicit promotion:
+   - **To Discovery Note:** Convert the wisp into a `## 🔍 Discovery Note` comment and set `promoted: true`.
+   - **To New Task:** Enqueue the wisp content as a discovered task in prd.json and set `promoted: true`.
+4. **Un-promoted wisps are lost on expiration.** Once a wisp's `expiresAt` timestamp has passed, it is excluded from context assembly and effectively ceases to exist. There is no automatic archival or recovery.
+
+### Why Wisps Expire
+
+Wisps keep the context window lean. Observations that seem important should be promoted to durable artifacts (Discovery Notes or tasks). Everything else is intentionally disposable.
 
 ---
 

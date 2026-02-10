@@ -6,7 +6,10 @@ Executes the implementation loop following the Ralph pattern. **By default, laun
 The loop script (`.claude/scripts/implement-loop.sh`) provides:
 - Fresh context per task (calls Claude CLI for each)
 - Automatic retries (up to 3 attempts per task)
-- Task logs posted to GitHub issue
+- Task logs posted to GitHub issue (with structured JSON event blocks)
+- Discovered-task auto-enqueue from task output
+- Compaction summaries every N task logs
+- Wisp collection for ephemeral context hints
 - Stops on completion or blocker
 
 For each task, the loop:
@@ -63,6 +66,68 @@ Format: `gh issue comment $ISSUE_NUMBER --body "## 📝 Task Log: US-XXX ..."`
 **Discovery notes MUST be posted** when you discover patterns, gotchas, or learnings that future tasks should know about. This is how the Ralph pattern maintains memory across sessions.
 
 Format: `gh issue comment $ISSUE_NUMBER --body "## 🔍 Discovery Note ..."`
+
+### JSON Event Block (Required in Every Task Log)
+
+Every task log comment **must** include an `### Event JSON` section containing a fenced json code block with a compact JSON event object. This enables structured parsing by the loop.
+
+**Format:**
+```markdown
+### Event JSON
+```json
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["cmd1"],"failed":[]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
+```
+```
+
+**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
+
+**Parser rule:** The loop extracts **only** fenced json blocks under `### Event JSON` headings. All other JSON in comments is ignored. If no Event JSON block is found, the loop falls back to legacy markdown parsing for backward compatibility.
+
+### Discovered-Task Output for Auto-Enqueue
+
+When a task discovers work that should be added to the plan, include it in the JSON event's `discovered` array:
+
+```json
+"discovered": [
+  {
+    "title": "Fix edge case in auth middleware",
+    "description": "Handle expired refresh tokens gracefully",
+    "acceptanceCriteria": ["Expired refresh token returns 401"],
+    "verifyCommands": ["npm run test -- auth"],
+    "dependsOn": []
+  }
+]
+```
+
+The loop will automatically:
+- Deduplicate by fingerprint hash (title + description + acceptanceCriteria + parent uid)
+- Generate a uid with `discoveredFrom` set to the parent task's uid
+- Assign priority = parent priority + 1 and `dependsOn` = [parent id]
+- Append to prd.json and commit the state update
+
+### Compaction Summaries
+
+The loop tracks a compaction counter in `prd.json.compaction.taskLogCountSinceLastSummary`. After every N task logs (default 5, configured via `summaryEveryNTaskLogs`), a `## 🧾 Compacted Summary` comment is posted to the issue containing:
+- Covered task UIDs and attempt counts
+- Canonical decisions and patterns from discovery notes
+- Open risks (tasks still failing)
+- A `supersedes` pointer to the previous compaction summary (or "none")
+
+After posting, the counter resets to 0. If the post fails, the counter is retained for retry on the next cycle.
+
+### Wisp Collection and Promotion
+
+**Wisps** (`## 🪶 Wisp`) are ephemeral context hints with an expiration timestamp. The loop:
+- Collects active (non-expired, non-promoted) wisps during context assembly
+- Includes their notes as supplementary context for the current task
+- Silently ignores expired or promoted wisps
+
+**Wisp promotion** (the only path to durability):
+- **To Discovery Note:** Converts the wisp into a `## 🔍 Discovery Note` comment
+- **To New Task:** Enqueues the wisp content as a discovered task in prd.json
+- In both cases, the original wisp comment is updated with `promoted: true`
+
+Un-promoted wisps are lost on expiration — there is no automatic archival.
 
 ### Enforcement
 
@@ -163,9 +228,11 @@ This command is designed to work **without memory** of previous runs. Context co
 
 | Source | Contains |
 |--------|----------|
-| `prd.json` | Task definitions, pass/fail status, attempt counts |
+| `prd.json` | Task definitions, pass/fail status, attempt counts, compaction state |
 | Git history | What code was written, commit messages |
-| Issue comments | Task logs, learnings, discovered patterns |
+| Issue comments | Task logs (with JSON events), learnings, discovered patterns |
+| Compacted summaries | Periodic summaries of recent task logs (replaces full history) |
+| Active wisps | Non-expired ephemeral context hints (ignored after expiry) |
 
 ### Why This Matters
 - Prevents context pollution from long sessions
@@ -428,7 +495,8 @@ Before moving to the next task, verify you have done ALL of the following:
 | 4 | **Commit prd.json** | Status update committed | ☐ |
 | 5 | **Push to remote** | `git push` completed | ☐ |
 | 6 | **Post task log to GitHub** | `gh issue comment` with `## 📝 Task Log` posted | ☐ |
-| 7 | **Post discovery note** | If patterns found, `## 🔍 Discovery Note` posted | ☐ |
+| 7 | **Include JSON event block** | Task log contains `### Event JSON` section with fenced json block (see below) | ☐ |
+| 8 | **Post discovery note** | If patterns found, `## 🔍 Discovery Note` posted | ☐ |
 
 **⚠️ If you skip the GitHub posting steps, the task is NOT complete.**
 
@@ -465,6 +533,11 @@ Created JWT authentication middleware with token extraction and validation.
 ### Learnings
 - Express Request extension requires `declare global` in .d.ts file
 - Existing pattern: middleware functions in src/middleware/ export as default
+
+### Event JSON
+```json
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck","npm run test -- auth.middleware"],"failed":[]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
+```
 ```
 
 #### If FAILED:
@@ -503,6 +576,11 @@ returning null. Need to wrap in try-catch and handle TokenExpiredError.
 1. Wrap verifyToken in try-catch
 2. Handle TokenExpiredError specifically
 3. Return 401 with "Token expired" message
+
+### Event JSON
+```json
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"fail","attempt":2,"commit":"","verify":{"passed":["npm run typecheck"],"failed":["npm run test -- auth.middleware"]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
+```
 ```
 
 ### Step 9: Post Learnings (If New Patterns Discovered)
@@ -594,17 +672,24 @@ When user runs `/implement` after loop completes:
 
 ### How the Background Script Works
 
-The script `.claude/scripts/implement-loop.sh`:
-1. Reads prd.json for task definitions and status
-2. Loops through tasks, calling `claude --print --dangerously-skip-permissions` for each
-3. Each Claude invocation:
+The script `.claude/scripts/implement-loop.sh` (with helpers from `implement-loop-lib.sh`):
+1. Initializes missing prd.json fields (formula, compaction, uid, discoveredFrom) for backward compatibility
+2. Reads prd.json for task definitions and status
+3. Loops through tasks, calling `claude --print --dangerously-skip-permissions` for each
+4. Each Claude invocation:
    - Reads prd.json for task details
    - Checks git log and issue comments for context
+   - Collects active (non-expired) wisps for ephemeral context hints
+   - Extracts recent JSON events from task log comments
+   - Includes latest compacted summary (if any) as primary historical context
    - Implements the task
    - Runs verification commands
    - Updates prd.json and commits
-   - Posts task log to GitHub issue
-4. Exits when: all pass, blocked, or max iterations
+   - Posts task log to GitHub issue (with `### Event JSON` fenced block)
+5. After each task log post:
+   - Auto-enqueues any discovered tasks from the task output into prd.json
+   - Increments the compaction counter; posts `## 🧾 Compacted Summary` every N task logs (default 5)
+6. Exits when: all pass, blocked, or max iterations
 
 ### Log Output Example
 

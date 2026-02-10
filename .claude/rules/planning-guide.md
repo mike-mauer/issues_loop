@@ -61,22 +61,44 @@ command
 | Field | Required | Description |
 |-------|----------|-------------|
 | `### US-XXX: {title}` | Yes | Task ID and title |
+| `uid` | Auto | Deterministic `tsk_` + 12-char hash (generated, not authored in plan) |
 | `**Priority:**` | Yes | Execution order (1 = first) |
 | `**Files:**` | Yes | Files to create/modify |
 | `**Depends On:**` | Yes | Task IDs that must pass first, or "None" |
+| `discoveredFrom` | Auto | `null` for planned tasks; parent `uid` for discovered tasks |
+| `discoverySource` | Auto | `null` for planned; `"task_log"`, `"wisp_promotion"`, etc. for discovered |
 | `**Description:**` | Yes | What to implement (2-3 sentences) |
 | `**Acceptance Criteria:**` | Yes | Testable checkboxes |
 | `**Verify Commands:**` | Yes | Bash commands to prove success |
 
+### Required Root Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `formula` | Yes | Issue type: `"bugfix"`, `"feature"`, or `"refactor"` (auto-detected) |
+| `compaction` | Yes | `{ taskLogCountSinceLastSummary: 0, summaryEveryNTaskLogs: 5 }` |
+
 ### Field Mapping (Plan → prd.json)
+
+#### Root Fields
 
 | Plan Markdown | prd.json Field |
 |---------------|----------------|
 | `# Implementation Plan: Issue #N` | `issueNumber: N` |
+| Auto-detected from issue text/labels | `formula: "bugfix"\|"feature"\|"refactor"` |
+| Auto-initialized | `compaction: { taskLogCountSinceLastSummary, summaryEveryNTaskLogs }` |
+
+#### Per-Story Fields
+
+| Plan Markdown | prd.json Field |
+|---------------|----------------|
 | `### US-XXX: {title}` | `userStories[].id`, `userStories[].title` |
+| Auto-generated from uid rule | `userStories[].uid` (`tsk_` + 12-char hash) |
 | `**Priority:** N` | `userStories[].priority` |
 | `**Files:** ...` | `userStories[].files` |
 | `**Depends On:** ...` | `userStories[].dependsOn` |
+| `null` for planned; parent uid for discovered | `userStories[].discoveredFrom` |
+| `null` for planned; source type for discovered | `userStories[].discoverySource` |
 | `**Description:**` block | `userStories[].description` |
 | `**Acceptance Criteria:**` list | `userStories[].acceptanceCriteria` |
 | `**Verify Commands:**` code block | `userStories[].verifyCommands` |
@@ -133,7 +155,8 @@ Before creating the plan, analyze:
 For each task, define:
 
 ```yaml
-id: "US-001"           # Unique identifier
+id: "US-001"           # Unique identifier (human-readable)
+uid: "tsk_a1b2c3d4e5f6" # Deterministic 12-char hash (machine key)
 priority: 1            # Execution priority (1 = highest, determines order)
 title: "Short title"    # Action-oriented
 description: |
@@ -151,6 +174,7 @@ verifyCommands:         # Actual commands to run
   - "npm run test"
   - "curl -X POST localhost:3000/api/users -d '{...}'"
 dependsOn: ["US-000"]   # Previous task IDs
+discoveredFrom: null    # null for planned tasks; parent uid for discovered tasks
 passes: false           # Will be set true when criteria met
 ```
 
@@ -242,15 +266,23 @@ Create in repo root:
   "description": "Implement user authentication with JWT",
   "generatedAt": "2024-01-15T10:30:00Z",
   "status": "approved",
+  "formula": "feature",
+  "compaction": {
+    "taskLogCountSinceLastSummary": 0,
+    "summaryEveryNTaskLogs": 5
+  },
   "userStories": [
     {
       "id": "US-001",
+      "uid": "tsk_a1b2c3d4e5f6",
       "phase": 1,
       "priority": 1,
       "title": "Create user database schema",
       "description": "Add User model to Prisma schema with id, email, password_hash, created_at fields. Generate and run migration.",
       "files": ["prisma/schema.prisma"],
       "dependsOn": [],
+      "discoveredFrom": null,
+      "discoverySource": null,
       "acceptanceCriteria": [
         "Migration creates users table with columns: id, email, password_hash, created_at",
         "npm run db:migrate completes without errors",
@@ -266,12 +298,15 @@ Create in repo root:
     },
     {
       "id": "US-002",
+      "uid": "tsk_f6e5d4c3b2a1",
       "phase": 1,
       "priority": 2,
       "title": "Implement JWT utilities",
       "description": "Create JWT sign/verify functions in src/lib/jwt.ts with proper TypeScript types.",
       "files": ["src/lib/jwt.ts", "src/types/auth.ts"],
       "dependsOn": ["US-001"],
+      "discoveredFrom": null,
+      "discoverySource": null,
       "acceptanceCriteria": [
         "signToken() returns valid JWT string",
         "verifyToken() decodes valid tokens correctly",
@@ -294,6 +329,39 @@ Create in repo root:
   ]
 }
 ```
+
+### uid Generation
+
+The `uid` field is a deterministic, collision-resistant identifier for each task. It uses the `tsk_` prefix followed by a 12-character hash.
+
+**uid = `tsk_` + hash(issueNumber + normalizedTitle + discoveredFrom + ordinal)**
+
+Input components:
+- **issueNumber** - The GitHub issue number (e.g., `42`)
+- **normalizedTitle** - Lowercase, trimmed, whitespace-collapsed task title
+- **discoveredFrom** - Parent task uid, or `null` for planned tasks
+- **ordinal** - Position within the parent scope (see Ordinal Counting below)
+
+**Important:** No timestamp is included in the uid inputs. This ensures the same task definition always produces the same uid regardless of when it was generated.
+
+**Hash function:** `echo -n "${issueNumber}|${normalizedTitle}|${discoveredFrom}|${ordinal}" | shasum -a 256 | cut -c1-12`
+
+### Ordinal Counting Rules
+
+The **ordinal** is the 1-based position of a task within its parent scope:
+
+| Scenario | discoveredFrom | Ordinal Rule |
+|----------|---------------|--------------|
+| **Planned tasks** | `null` | Sequential plan order: US-001=1, US-002=2, US-003=3, etc. |
+| **Discovered tasks** (from US-001) | `tsk_<parent-uid>` | Count within that parent: 1st discovered=1, 2nd discovered=2, etc. |
+| **Discovered tasks** (from US-003) | `tsk_<parent-uid>` | Count restarts at 1 for each new parent |
+
+### discoveredFrom and discoverySource
+
+| Field | Planned Tasks | Discovered Tasks |
+|-------|--------------|-----------------|
+| `discoveredFrom` | `null` | Parent task's `uid` (e.g., `tsk_a1b2c3d4e5f6`) |
+| `discoverySource` | `null` | How discovered: `"task_log"`, `"wisp_promotion"`, etc. |
 
 ---
 

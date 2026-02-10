@@ -9,6 +9,10 @@
 
 set -e
 
+# Source helper library (uid generation, JSON event extraction, backward-compat)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/implement-loop-lib.sh"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Style constants - consistent formatting across all output
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -65,6 +69,10 @@ cleanup() {
   rm -f "$LOCK_FILE" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+# Backward-compatible initialization: fill in missing formula, compaction,
+# uid, discoveredFrom, discoverySource fields with safe defaults
+initialize_missing_prd_fields "$PRD_FILE"
 
 ISSUE_NUMBER=$(jq -r '.issueNumber' "$PRD_FILE")
 BRANCH=$(jq -r '.branchName' "$PRD_FILE")
@@ -127,6 +135,8 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
   TASK_TITLE=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .title' "$PRD_FILE")
   TASK_ATTEMPTS=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .attempts // 0' "$PRD_FILE")
+  TASK_UID=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .uid // ""' "$PRD_FILE")
+  TASK_PRIORITY=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .priority // 1' "$PRD_FILE")
 
   log ""
   log "$LINE_HEAVY"
@@ -153,6 +163,12 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   # 4. Get list of files in repo (for context on codebase structure)
   REPO_STRUCTURE=$(find . -type f -name "*.ts" -o -name "*.js" -o -name "*.tsx" -o -name "*.jsx" -o -name "*.py" -o -name "*.go" -o -name "*.rs" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -50 || echo "Could not list files")
 
+  # 5. Collect active (non-expired) wisps for ephemeral context
+  ACTIVE_WISPS=$(collect_active_wisps "$ISSUE_NUMBER" 2>/dev/null || echo "")
+
+  # 6. Extract structured JSON events from recent task logs
+  JSON_EVENTS=$(extract_json_events_from_issue_comments "$ISSUE_COMMENTS" 2>/dev/null || echo "")
+
   # Build prompt for Claude with gathered context
   PROMPT="You are executing a single task from the implementation loop.
 
@@ -178,6 +194,16 @@ $GIT_LOG
 Source files (first 50):
 $REPO_STRUCTURE
 
+=== TASK IDENTITY ===
+Task UID: $TASK_UID
+(Use this exact value for taskUid in the Event JSON block — do NOT generate your own.)
+
+=== ACTIVE WISPS (ephemeral context hints) ===
+${ACTIVE_WISPS:-No active wisps}
+
+=== RECENT JSON EVENTS (structured task history) ===
+${JSON_EVENTS:-No structured events found}
+
 === INSTRUCTIONS ===
 1. Review the task details above (acceptanceCriteria, verifyCommands, files to modify)
 2. Use the issue body and comments for requirements and learnings
@@ -202,6 +228,22 @@ If verification FAILS:
   - Add 'AI: Blocked' label: gh issue edit $ISSUE_NUMBER --add-label \"AI: Blocked\"
   - Output exactly: <result>BLOCKED</result>
 - Otherwise output exactly: <result>RETRY</result>
+
+=== JSON EVENT EMISSION ===
+Your task log comment MUST include a '### Event JSON' section with a single
+fenced json code block containing a compact JSON event object. Place this at
+the end of the task log comment. Format:
+
+\`\`\`
+### Event JSON
+\\\`\\\`\\\`json
+{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"discovered\":[],\"ts\":\"<ISO 8601>\"}
+\\\`\\\`\\\`
+\`\`\`
+
+The 'discovered' array should contain any new tasks found during implementation
+(empty array if none). Each discovered task object needs: title, description,
+acceptanceCriteria, verifyCommands, and dependsOn.
 
 CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</result>, or <result>BLOCKED</result> as the final line of your response."
 
@@ -229,12 +271,45 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
   # Extract result more reliably (case-insensitive, handle whitespace)
   RESULT=$(echo "$OUTPUT" | grep -oiE '<result>\s*(PASS|RETRY|BLOCKED)\s*</result>' | tail -1 | sed 's/<[^>]*>//g' | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
 
-  # Check result
+  # ─── Post-task orchestration: enqueue discovered tasks + compaction ───
+
+  # Verify task log was ACTUALLY posted to GitHub (not just emitted in output).
+  # This is the authoritative check — proves gh issue comment succeeded.
+  PARSED_EVENT=""
+  EVENT_VERIFIED=0
+  if [ "$RESULT" = "PASS" ] || [ "$RESULT" = "RETRY" ]; then
+    PARSED_EVENT=$(verify_task_log_on_github "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" 2>/dev/null || echo "")
+
+    if [ -n "$PARSED_EVENT" ] && [ "$PARSED_EVENT" != "null" ]; then
+      EVENT_VERIFIED=1
+
+      # Extract discovered tasks from the verified event
+      DISCOVERED_JSON=$(echo "$PARSED_EVENT" | jq -c '[.discovered[]? // empty]' 2>/dev/null || echo "[]")
+      if [ -n "$DISCOVERED_JSON" ] && [ "$DISCOVERED_JSON" != "[]" ] && [ "$DISCOVERED_JSON" != "null" ]; then
+        log "Discovered tasks found, enqueuing..."
+        enqueue_discovered_tasks "$PRD_FILE" "$NEXT_TASK" "$TASK_UID" "$TASK_PRIORITY" "$DISCOVERED_JSON" "$ISSUE_NUMBER"
+        log "$ICON_SUCCESS Discovered tasks enqueued"
+      fi
+    fi
+
+    if [ "$EVENT_VERIFIED" -eq 0 ]; then
+      log "$ICON_WARN Task log not found on GitHub — comment may have failed to post. Skipping compaction."
+    fi
+  fi
+
+  # Check result; only run compaction if event was verified (confirms task log was posted)
   if [ "$RESULT" = "PASS" ]; then
     log ""
     log "$LINE_HEAVY"
     log "$ICON_SUCCESS $NEXT_TASK passed! Moving to next task..."
     log "$LINE_HEAVY"
+
+    # Compaction: only increment counter if task log was confirmed via Event JSON
+    if [ "$EVENT_VERIFIED" -eq 1 ]; then
+      maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    fi
+    git push 2>/dev/null || true
+
   elif [ "$RESULT" = "BLOCKED" ]; then
     log ""
     log "$LINE_HEAVY"
@@ -247,6 +322,13 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
   elif [ "$RESULT" = "RETRY" ]; then
     log ""
     log "$ICON_RETRY $NEXT_TASK failed verification, retrying..."
+
+    # Compaction: only increment counter if task log was confirmed via Event JSON
+    if [ "$EVENT_VERIFIED" -eq 1 ]; then
+      maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    fi
+    git push 2>/dev/null || true
+
     # Don't increment iteration for retries within same task
   else
     log ""

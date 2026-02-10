@@ -19,8 +19,10 @@ This protocol provides explicit phases, `AskUserQuestion` checkpoints, and full 
 
 ```
 Phase 1: EXPLORATION
+├─ Detect formula type (bugfix/feature/refactor)
+├─ Load formula template from templates/formulas/
 ├─ Analyze codebase context
-├─ Display Discovery Summary
+├─ Display Discovery Summary (with formula)
 └─ Checkpoint: "Proceed to planning?"
 
 Phase 2: TASK DECOMPOSITION
@@ -50,18 +52,23 @@ Phase 5: PRD.JSON GENERATION
 
 ## Phase 1: Exploration
 
-**Goal:** Gather codebase context before planning. Understand patterns, conventions, and relevant files.
+**Goal:** Gather codebase context before planning. Understand patterns, conventions, and relevant files. Detect the issue formula type.
 
 ### What To Do
 
 1. **Read the issue** - Understand requirements, acceptance criteria, scope
-2. **Explore the codebase** using Grep, Glob, Read tools:
+2. **Detect formula type** - Classify the issue as bugfix, feature, or refactor:
+   - Check issue labels first (highest priority): `bug`/`regression`/`defect` → bugfix, `refactor`/`tech-debt`/`cleanup` → refactor, `feature`/`enhancement`/`new` → feature
+   - If no label match, scan issue title + body for keywords (see `il_1_plan.md` Step 2b for full decision tree)
+   - Default to `feature` when ambiguous
+   - Load the matching formula template from `templates/formulas/{formula}.md` — this guides task topology in Phase 2
+3. **Explore the codebase** using Grep, Glob, Read tools:
    - Find relevant existing files
    - Identify patterns and conventions
    - Locate similar features for reference
    - Note integration points
-3. **Identify risks** - Edge cases, dependencies, potential blockers
-4. **Synthesize findings** into a Discovery Summary
+4. **Identify risks** - Edge cases, dependencies, potential blockers
+5. **Synthesize findings** into a Discovery Summary (including detected formula)
 
 ### Discovery Summary Template
 
@@ -73,6 +80,12 @@ Display this to the user before proceeding:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 **Issue:** #{number} - {title}
+
+### Formula Detection
+- **Detected formula:** {bugfix|feature|refactor}
+- **Detection source:** {label match|keyword match|default}
+- **Template:** `templates/formulas/{formula}.md`
+- **Task topology:** {e.g., reproduce → fix → verify}
 
 ### Requirements Found
 - {requirement 1}
@@ -116,11 +129,11 @@ Options:
 
 ## Phase 2: Task Decomposition
 
-**Goal:** Break the requirement into small, testable, context-window-sized tasks.
+**Goal:** Break the requirement into small, testable, context-window-sized tasks using the detected formula's topology.
 
 ### What To Do
 
-1. **Decompose** the requirement into discrete tasks
+1. **Decompose** the requirement into discrete tasks following the formula template's task topology (e.g., bugfix: reproduce → fix → verify). Reference `templates/formulas/{formula}.md` for default phases, acceptance criteria patterns, and verify command patterns.
 2. **For each task, define:**
    - `id` - Unique identifier (US-001, US-002, etc.)
    - `title` - Action-oriented, 5-8 words
@@ -344,6 +357,8 @@ Options:
 
 ### prd.json Schema
 
+The `formula` field must be set to the formula detected in Phase 1. This persists the selected formula for use by the implementation loop.
+
 ```json
 {
   "project": "{slug-from-title}",
@@ -352,15 +367,23 @@ Options:
   "description": "{issue title}",
   "generatedAt": "{ISO timestamp}",
   "status": "approved",
+  "formula": "{bugfix|feature|refactor}",
+  "compaction": {
+    "taskLogCountSinceLastSummary": 0,
+    "summaryEveryNTaskLogs": 5
+  },
   "userStories": [
     {
       "id": "US-001",
+      "uid": "tsk_{12-char-hash}",
       "phase": 1,
       "priority": 1,
       "title": "Task title",
       "description": "What to implement",
       "files": ["path/to/file.ts"],
       "dependsOn": [],
+      "discoveredFrom": null,
+      "discoverySource": null,
       "acceptanceCriteria": ["Testable criterion"],
       "verifyCommands": ["npm run test"],
       "passes": false,
