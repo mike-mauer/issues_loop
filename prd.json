@@ -379,5 +379,8 @@
     "bash -n .claude/scripts/implement-loop.sh",
     "bash -n .claude/scripts/implement-loop-lib.sh",
     "bash tests/test-enhancements.sh"
-  ]
+  ],
+  "debugState": {
+    "status": "testing"
+  }
 }
