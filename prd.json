@@ -298,9 +298,9 @@
         "grep -q 'compaction\\|Compacted Summary' .claude/commands/il_2_implement.md",
         "grep -q 'wisp\\|Wisp' .claude/commands/il_2_implement.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-09T23:45:00Z"
     },
     {
       "id": "US-010",
