@@ -118,9 +118,9 @@
         "grep -q 'schema' templates/formulas/feature.md",
         "grep -q 'extract' templates/formulas/refactor.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T04:00:00Z"
     },
     {
       "id": "US-005",
