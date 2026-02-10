@@ -381,6 +381,8 @@
     "bash tests/test-enhancements.sh"
   ],
   "debugState": {
-    "status": "testing"
+    "status": "verified",
+    "debugAttempts": 0,
+    "debugHistory": []
   }
 }
