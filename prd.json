@@ -91,9 +91,9 @@
         "grep -q 'fallback' .claude/rules/github-issue-workflow.md",
         "grep -q 'promot' .claude/rules/github-issue-workflow.md"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T03:30:00Z"
     },
     {
       "id": "US-004",
