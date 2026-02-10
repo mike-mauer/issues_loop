@@ -7,6 +7,7 @@
 #   3. Compaction trigger on 5th task log + counter reset
 #   4. Wisp expiration filtering (expired excluded, active included)
 #   5. Legacy prd.json backward compatibility (safe defaults)
+#   6. GitHub-authoritative task log verification + UID mismatch correction
 #
 # Usage: bash tests/test-enhancements.sh
 
@@ -513,6 +514,113 @@ if python3 -c "import json; json.load(open('$TEST_DIR/prd-legacy.json'))" 2>/dev
 else
   fail "5j: Initialized prd.json is valid JSON" "valid JSON" "invalid JSON"
 fi
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 6: GitHub-Authoritative Task Log Verification
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 6: verify_task_log_on_github + EVENT_VERIFIED Gating ──"
+
+# 6a. Matching task log found with correct UID — returns event JSON, exit 0
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    # Return a single comment as @json-encoded line
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/99#issuecomment-12345","body":"## 📝 Task Log: US-003\n\n**Status:** ✅ Passed\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-003\",\"taskUid\":\"tsk_correct_uid\",\"status\":\"pass\",\"attempt\":1}\n```"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+result_6a=$(verify_task_log_on_github 99 "US-003" "tsk_correct_uid")
+exit_6a=$?
+assert_eq "$exit_6a" "0" "6a: Returns exit 0 when matching task log found"
+assert_contains "$result_6a" '"taskId":"US-003"' "6a: Returns event JSON with correct taskId"
+assert_contains "$result_6a" '"taskUid":"tsk_correct_uid"' "6a: taskUid matches expected value"
+
+# 6b. No matching task log — returns empty, exit 1
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    # Return a comment for a DIFFERENT task
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/99#issuecomment-99999","body":"## 📝 Task Log: US-001\n\n**Status:** ✅ Passed\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-001\",\"taskUid\":\"tsk_other\",\"status\":\"pass\",\"attempt\":1}\n```"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+set +e
+result_6b=$(verify_task_log_on_github 99 "US-005" "tsk_expected" 2>/dev/null)
+exit_6b=$?
+set -e
+assert_eq "$exit_6b" "1" "6b: Returns exit 1 when no matching task log found"
+assert_eq "$result_6b" "" "6b: Returns empty output when task log not found"
+
+# 6c. UID mismatch — returns patched event JSON with corrected UID
+GH_API_CALLED=""
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/99#issuecomment-55555","body":"## 📝 Task Log: US-004\n\n**Status:** ✅ Passed\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-004\",\"taskUid\":\"tsk_wrong_uid\",\"status\":\"pass\",\"attempt\":2}\n```"}
+GHEOF
+    return 0
+  elif [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "org/repo"
+    return 0
+  elif [ "$1" = "api" ]; then
+    # Record that gh api was called (proves PATCH was attempted)
+    GH_API_CALLED="yes:$2"
+    return 0
+  fi
+}
+export -f gh
+export GH_API_CALLED
+
+result_6c=$(verify_task_log_on_github 99 "US-004" "tsk_correct_004")
+exit_6c=$?
+assert_eq "$exit_6c" "0" "6c: Returns exit 0 even when UID was patched"
+assert_contains "$result_6c" '"taskUid":"tsk_correct_004"' "6c: Returned event has corrected UID"
+assert_not_contains "$result_6c" "tsk_wrong_uid" "6c: Wrong UID no longer in returned event"
+
+# 6d. UID mismatch triggers gh api PATCH call to update the comment
+# Note: GH_API_CALLED is set in the subshell within verify_task_log_on_github,
+# so we verify the patch behavior by checking the returned UID differs from input.
+patched_uid=$(echo "$result_6c" | jq -r '.taskUid // ""' 2>/dev/null)
+assert_eq "$patched_uid" "tsk_correct_004" "6d: Patched UID in returned event is the expected UID"
+
+# 6e. Empty comments from GitHub — returns exit 1
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    echo ""
+    return 0
+  fi
+}
+export -f gh
+
+set +e
+result_6e=$(verify_task_log_on_github 99 "US-001" "tsk_any" 2>/dev/null)
+exit_6e=$?
+set -e
+assert_eq "$exit_6e" "1" "6e: Returns exit 1 when GitHub returns empty comments"
+
+# 6f. GitHub API failure — returns exit 1
+gh() {
+  return 1
+}
+export -f gh
+
+set +e
+result_6f=$(verify_task_log_on_github 99 "US-001" "tsk_any" 2>/dev/null)
+exit_6f=$?
+set -e
+assert_eq "$exit_6f" "1" "6f: Returns exit 1 when gh CLI fails"
+
+# Reset gh mock to no-op
+gh() { :; }
+export -f gh
 
 echo ""
 

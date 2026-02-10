@@ -725,3 +725,98 @@ ${updated_wisp}
 
   return 0
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Task Log Verification (GitHub-authoritative)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Verify that a task log with Event JSON was actually posted to GitHub,
+# and that the taskUid in the comment is correct. If UID mismatches,
+# patches the comment in-place via gh api.
+#
+# This checks durable GitHub state, NOT Claude's stdout — proving the
+# comment was actually posted, not just emitted in model output.
+#
+# Args:
+#   $1 - issue number
+#   $2 - task id (e.g., "US-003")
+#   $3 - expected task uid (e.g., "tsk_a1b2c3d4e5f6")
+#
+# Output: the verified/patched Event JSON object (single line), or empty
+# Returns: 0 if verified, 1 if no matching task log found on GitHub
+verify_task_log_on_github() {
+  local issue_number="$1"
+  local task_id="$2"
+  local expected_uid="$3"
+
+  # Fetch recent comments (last 5 to cover retries)
+  local recent_comments
+  recent_comments=$(gh issue view "$issue_number" --json comments \
+    --jq '.comments[-5:][] | @json' 2>/dev/null || echo "")
+
+  if [ -z "$recent_comments" ]; then
+    return 1
+  fi
+
+  # Find the most recent comment containing a task log for this task ID
+  local comment_url=""
+  local comment_body=""
+  local event_json=""
+
+  while IFS= read -r raw_comment; do
+    [ -z "$raw_comment" ] && continue
+    local c_url c_body
+    c_url=$(echo "$raw_comment" | jq -r '.url // ""' 2>/dev/null)
+    c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+
+    # Check if this comment is a task log for our task
+    if echo "$c_body" | grep -q "Task Log: ${task_id}"; then
+      # Extract Event JSON from this specific comment
+      local extracted
+      extracted=$(extract_json_events_from_issue_comments "$c_body" 2>/dev/null | head -1)
+
+      if [ -n "$extracted" ]; then
+        local parsed_tid
+        parsed_tid=$(echo "$extracted" | jq -r '.taskId // ""' 2>/dev/null)
+        if [ "$parsed_tid" = "$task_id" ]; then
+          comment_url="$c_url"
+          comment_body="$c_body"
+          event_json="$extracted"
+          break
+        fi
+      fi
+    fi
+  done <<< "$recent_comments"
+
+  if [ -z "$event_json" ]; then
+    return 1
+  fi
+
+  # Validate taskUid
+  local parsed_uid
+  parsed_uid=$(echo "$event_json" | jq -r '.taskUid // ""' 2>/dev/null)
+
+  if [ "$parsed_uid" != "$expected_uid" ] && [ -n "$expected_uid" ]; then
+    # UID mismatch — patch the comment on GitHub
+    local numeric_id
+    numeric_id=$(echo "$comment_url" | grep -oE '[0-9]+$')
+    local repo
+    repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+
+    if [ -n "$numeric_id" ] && [ -n "$repo" ]; then
+      # Replace the wrong UID in the comment body
+      local patched_body
+      patched_body=$(echo "$comment_body" | sed "s|\"taskUid\":\"${parsed_uid}\"|\"taskUid\":\"${expected_uid}\"|g")
+
+      gh api "repos/${repo}/issues/comments/${numeric_id}" \
+        -X PATCH -f body="$patched_body" 2>/dev/null || true
+    fi
+
+    # Return patched event
+    echo "$event_json" | jq -c --arg uid "$expected_uid" '.taskUid = $uid'
+  else
+    echo "$event_json"
+  fi
+
+  return 0
+}
