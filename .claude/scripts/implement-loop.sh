@@ -9,6 +9,10 @@
 
 set -e
 
+# Source helper library (uid generation, JSON event extraction, backward-compat)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/implement-loop-lib.sh"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Style constants - consistent formatting across all output
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -65,6 +69,10 @@ cleanup() {
   rm -f "$LOCK_FILE" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+# Backward-compatible initialization: fill in missing formula, compaction,
+# uid, discoveredFrom, discoverySource fields with safe defaults
+initialize_missing_prd_fields "$PRD_FILE"
 
 ISSUE_NUMBER=$(jq -r '.issueNumber' "$PRD_FILE")
 BRANCH=$(jq -r '.branchName' "$PRD_FILE")
@@ -202,6 +210,22 @@ If verification FAILS:
   - Add 'AI: Blocked' label: gh issue edit $ISSUE_NUMBER --add-label \"AI: Blocked\"
   - Output exactly: <result>BLOCKED</result>
 - Otherwise output exactly: <result>RETRY</result>
+
+=== JSON EVENT EMISSION ===
+Your task log comment MUST include a '### Event JSON' section with a single
+fenced json code block containing a compact JSON event object. Place this at
+the end of the task log comment. Format:
+
+\`\`\`
+### Event JSON
+\\\`\\\`\\\`json
+{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"<uid from prd.json>\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"discovered\":[],\"ts\":\"<ISO 8601>\"}
+\\\`\\\`\\\`
+\`\`\`
+
+The 'discovered' array should contain any new tasks found during implementation
+(empty array if none). Each discovered task object needs: title, description,
+acceptanceCriteria, verifyCommands, and dependsOn.
 
 CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</result>, or <result>BLOCKED</result> as the final line of your response."
 
