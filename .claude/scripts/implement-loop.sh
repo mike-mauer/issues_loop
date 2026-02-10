@@ -135,6 +135,8 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
   TASK_TITLE=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .title' "$PRD_FILE")
   TASK_ATTEMPTS=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .attempts // 0' "$PRD_FILE")
+  TASK_UID=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .uid // ""' "$PRD_FILE")
+  TASK_PRIORITY=$(jq -r --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id) | .priority // 1' "$PRD_FILE")
 
   log ""
   log "$LINE_HEAVY"
@@ -161,6 +163,12 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   # 4. Get list of files in repo (for context on codebase structure)
   REPO_STRUCTURE=$(find . -type f -name "*.ts" -o -name "*.js" -o -name "*.tsx" -o -name "*.jsx" -o -name "*.py" -o -name "*.go" -o -name "*.rs" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -50 || echo "Could not list files")
 
+  # 5. Collect active (non-expired) wisps for ephemeral context
+  ACTIVE_WISPS=$(collect_active_wisps "$ISSUE_NUMBER" 2>/dev/null || echo "")
+
+  # 6. Extract structured JSON events from recent task logs
+  JSON_EVENTS=$(extract_json_events_from_issue_comments "$ISSUE_COMMENTS" 2>/dev/null || echo "")
+
   # Build prompt for Claude with gathered context
   PROMPT="You are executing a single task from the implementation loop.
 
@@ -185,6 +193,16 @@ $GIT_LOG
 === REPO STRUCTURE ===
 Source files (first 50):
 $REPO_STRUCTURE
+
+=== TASK IDENTITY ===
+Task UID: $TASK_UID
+(Use this exact value for taskUid in the Event JSON block — do NOT generate your own.)
+
+=== ACTIVE WISPS (ephemeral context hints) ===
+${ACTIVE_WISPS:-No active wisps}
+
+=== RECENT JSON EVENTS (structured task history) ===
+${JSON_EVENTS:-No structured events found}
 
 === INSTRUCTIONS ===
 1. Review the task details above (acceptanceCriteria, verifyCommands, files to modify)
@@ -219,7 +237,7 @@ the end of the task log comment. Format:
 \`\`\`
 ### Event JSON
 \\\`\\\`\\\`json
-{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"<uid from prd.json>\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"discovered\":[],\"ts\":\"<ISO 8601>\"}
+{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"discovered\":[],\"ts\":\"<ISO 8601>\"}
 \\\`\\\`\\\`
 \`\`\`
 
@@ -253,12 +271,32 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
   # Extract result more reliably (case-insensitive, handle whitespace)
   RESULT=$(echo "$OUTPUT" | grep -oiE '<result>\s*(PASS|RETRY|BLOCKED)\s*</result>' | tail -1 | sed 's/<[^>]*>//g' | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
 
-  # Check result
+  # ─── Post-task orchestration: enqueue discovered tasks + compaction ───
+
+  # Extract discovered tasks from output (parse JSON events from Claude's response)
+  # Look for Event JSON block in the output to get discovered array
+  DISCOVERED_JSON=""
+  if [ "$RESULT" = "PASS" ] || [ "$RESULT" = "RETRY" ]; then
+    DISCOVERED_JSON=$(echo "$OUTPUT" | extract_json_events_from_issue_comments | \
+      jq -s '[.[].discovered[]? // empty]' 2>/dev/null || echo "[]")
+    if [ -n "$DISCOVERED_JSON" ] && [ "$DISCOVERED_JSON" != "[]" ] && [ "$DISCOVERED_JSON" != "null" ]; then
+      log "Discovered tasks found, enqueuing..."
+      enqueue_discovered_tasks "$PRD_FILE" "$NEXT_TASK" "$TASK_UID" "$TASK_PRIORITY" "$DISCOVERED_JSON" "$ISSUE_NUMBER"
+      log "$ICON_SUCCESS Discovered tasks enqueued"
+    fi
+  fi
+
+  # Check result and run compaction after pass/retry (task log was posted by Claude)
   if [ "$RESULT" = "PASS" ]; then
     log ""
     log "$LINE_HEAVY"
     log "$ICON_SUCCESS $NEXT_TASK passed! Moving to next task..."
     log "$LINE_HEAVY"
+
+    # Compaction: increment counter, post summary if threshold reached
+    maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    git push 2>/dev/null || true
+
   elif [ "$RESULT" = "BLOCKED" ]; then
     log ""
     log "$LINE_HEAVY"
@@ -271,6 +309,11 @@ CRITICAL: You MUST output exactly one of <result>PASS</result>, <result>RETRY</r
   elif [ "$RESULT" = "RETRY" ]; then
     log ""
     log "$ICON_RETRY $NEXT_TASK failed verification, retrying..."
+
+    # Still run compaction counter (a task log was posted even on failure)
+    maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$((TASK_ATTEMPTS + 1))"
+    git push 2>/dev/null || true
+
     # Don't increment iteration for retries within same task
   else
     log ""
