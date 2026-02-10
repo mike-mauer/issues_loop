@@ -26,8 +26,13 @@
     "debugSession": "## 🔧 Debug Session",
     "debugFixed": "## ✅ Debug Fix Applied",
     "debugBlocked": "## 🚫 Debug Blocked",
-    "finalReport": "## 📊 Final Report"
+    "finalReport": "## 📊 Final Report",
+    "compactedSummary": "## 🧾 Compacted Summary",
+    "wisp": "## 🪶 Wisp"
   },
+  "taskLogJsonVersion": 1,
+  "summaryEveryNTaskLogs": 5,
+  "wispDefaultTtlMinutes": 90,
   "commitPrefixes": {
     "task": "feat",
     "state": "chore",
