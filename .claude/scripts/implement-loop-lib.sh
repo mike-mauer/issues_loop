@@ -758,7 +758,9 @@ verify_task_log_on_github() {
     return 1
   fi
 
-  # Find the most recent comment containing a task log for this task ID
+  # Find the most recent comment containing a task log for this task ID.
+  # gh yields comments oldest→newest within the slice, so we must iterate
+  # ALL matches and keep the last one (= most recent).
   local comment_url=""
   local comment_body=""
   local event_json=""
@@ -782,7 +784,7 @@ verify_task_log_on_github() {
           comment_url="$c_url"
           comment_body="$c_body"
           event_json="$extracted"
-          break
+          # Do NOT break — keep iterating to find the newest match
         fi
       fi
     fi
@@ -808,11 +810,18 @@ verify_task_log_on_github() {
       local patched_body
       patched_body=$(echo "$comment_body" | sed "s|\"taskUid\":\"${parsed_uid}\"|\"taskUid\":\"${expected_uid}\"|g")
 
-      gh api "repos/${repo}/issues/comments/${numeric_id}" \
-        -X PATCH -f body="$patched_body" 2>/dev/null || true
+      if ! gh api "repos/${repo}/issues/comments/${numeric_id}" \
+        -X PATCH -f body="$patched_body" 2>/dev/null; then
+        # Patch failed — GitHub comment still has wrong UID.
+        # Cannot claim durable verification.
+        return 1
+      fi
+    else
+      # Could not determine comment ID or repo — cannot patch durably.
+      return 1
     fi
 
-    # Return patched event
+    # Patch succeeded — return corrected event
     echo "$event_json" | jq -c --arg uid "$expected_uid" '.taskUid = $uid'
   else
     echo "$event_json"

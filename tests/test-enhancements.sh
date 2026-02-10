@@ -618,6 +618,49 @@ exit_6f=$?
 set -e
 assert_eq "$exit_6f" "1" "6f: Returns exit 1 when gh CLI fails"
 
+# 6g. Multiple task logs for same task — picks the NEWEST (last in slice), not oldest
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    # Two comments for US-007: older (attempt 1) then newer (attempt 2)
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/99#issuecomment-11111","body":"## 📝 Task Log: US-007\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-007\",\"taskUid\":\"tsk_uid7\",\"status\":\"fail\",\"attempt\":1}\n```"}
+{"url":"https://github.com/org/repo/issues/99#issuecomment-22222","body":"## 📝 Task Log: US-007\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-007\",\"taskUid\":\"tsk_uid7\",\"status\":\"pass\",\"attempt\":2}\n```"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+result_6g=$(verify_task_log_on_github 99 "US-007" "tsk_uid7")
+exit_6g=$?
+assert_eq "$exit_6g" "0" "6g: Returns exit 0 with multiple matching logs"
+assert_contains "$result_6g" '"attempt":2' "6g: Picks newest log (attempt 2, not attempt 1)"
+assert_contains "$result_6g" '"status":"pass"' "6g: Newest log status is pass (not the older fail)"
+
+# 6h. UID mismatch but gh api PATCH fails — must return exit 1 (not verified)
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/99#issuecomment-33333","body":"## 📝 Task Log: US-008\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":99,\"taskId\":\"US-008\",\"taskUid\":\"tsk_wrong\",\"status\":\"pass\",\"attempt\":1}\n```"}
+GHEOF
+    return 0
+  elif [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "org/repo"
+    return 0
+  elif [ "$1" = "api" ]; then
+    # Simulate PATCH failure (permissions/network)
+    return 1
+  fi
+}
+export -f gh
+
+set +e
+result_6h=$(verify_task_log_on_github 99 "US-008" "tsk_correct_008" 2>/dev/null)
+exit_6h=$?
+set -e
+assert_eq "$exit_6h" "1" "6h: Returns exit 1 when gh api PATCH fails (not durably verified)"
+assert_eq "$result_6h" "" "6h: Returns no output when patch fails"
+
 # Reset gh mock to no-op
 gh() { :; }
 export -f gh
