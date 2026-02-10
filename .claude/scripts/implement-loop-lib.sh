@@ -279,7 +279,7 @@ enqueue_discovered_tasks() {
   local existing_fingerprints
   existing_fingerprints=$(jq -r --arg puid "$parent_uid" \
     '.userStories[] | select(.discoveredFrom == $puid) |
-     "\(.title)\t\(.description)\t(\(.acceptanceCriteria | join(",")))"' "$prd_file" 2>/dev/null || echo "")
+     "\(.title)\t\(.description)\t\(.acceptanceCriteria | join(","))"' "$prd_file" 2>/dev/null || echo "")
 
   # Compute fingerprints for existing tasks from this parent
   local existing_fp_hashes=""
@@ -550,56 +550,79 @@ collect_active_wisps() {
     return 0
   fi
 
-  # Parse each wisp comment to extract the JSON payload and check expiration
-  echo "$wisp_bodies" | while IFS= read -r body; do
-    # Skip empty lines
-    [ -z "$body" ] && continue
+  # Parse wisp comments using a state machine to handle multi-line bodies.
+  # Extract fenced json blocks (```json ... ```) and filter by expiration.
+  local in_json_block=0
+  local json_buffer=""
 
-    # Extract fenced json block from the wisp comment body
-    local wisp_json
-    wisp_json=$(echo "$body" | sed -n '/^```json/,/^```/{/^```/d;p}' | head -1)
-
-    if [ -z "$wisp_json" ]; then
+  while IFS= read -r line; do
+    # Opening fence: ```json
+    if echo "$line" | grep -qE '^\s*```json\s*$'; then
+      in_json_block=1
+      json_buffer=""
       continue
     fi
 
-    # Validate JSON
-    if ! echo "$wisp_json" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+    # Closing fence: ```
+    if [ "$in_json_block" -eq 1 ] && echo "$line" | grep -qE '^\s*```\s*$'; then
+      in_json_block=0
+
+      if [ -z "$json_buffer" ]; then
+        continue
+      fi
+
+      # Validate JSON
+      if ! echo "$json_buffer" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+        continue
+      fi
+
+      # Check if this is a wisp (has type=wisp)
+      local wtype
+      wtype=$(echo "$json_buffer" | jq -r '.type // ""' 2>/dev/null)
+      if [ "$wtype" != "wisp" ]; then
+        continue
+      fi
+
+      # Check if promoted (skip promoted wisps)
+      local promoted
+      promoted=$(echo "$json_buffer" | jq -r '.promoted // false' 2>/dev/null)
+      if [ "$promoted" = "true" ]; then
+        continue
+      fi
+
+      # Check expiresAt timestamp
+      local expiresAt
+      expiresAt=$(echo "$json_buffer" | jq -r '.expiresAt // ""' 2>/dev/null)
+
+      if [ -z "$expiresAt" ]; then
+        # No expiresAt — treat as expired (safety: wisps must have expiration)
+        continue
+      fi
+
+      # Parse expiresAt to epoch seconds (timestamps are UTC with Z suffix)
+      local expires_epoch
+      expires_epoch=$(TZ=UTC date -jf "%Y-%m-%dT%H:%M:%SZ" "$expiresAt" +%s 2>/dev/null || \
+                      date -d "$expiresAt" +%s 2>/dev/null || \
+                      echo "0")
+
+      if [ "$expires_epoch" -eq 0 ]; then
+        # Unparseable expiresAt — treat as expired
+        continue
+      fi
+
+      # Only include non-expired wisps
+      if [ "$expires_epoch" -gt "$now_epoch" ]; then
+        echo "$json_buffer"
+      fi
+
       continue
     fi
 
-    # Check if promoted (skip promoted wisps)
-    local promoted
-    promoted=$(echo "$wisp_json" | jq -r '.promoted // false' 2>/dev/null)
-    if [ "$promoted" = "true" ]; then
-      continue
+    # Accumulate lines inside the json block
+    if [ "$in_json_block" -eq 1 ]; then
+      json_buffer="${json_buffer}${line}"
     fi
-
-    # Check expiresAt timestamp
-    local expiresAt
-    expiresAt=$(echo "$wisp_json" | jq -r '.expiresAt // ""' 2>/dev/null)
-
-    if [ -z "$expiresAt" ]; then
-      # No expiresAt — treat as expired (safety: wisps must have expiration)
-      continue
-    fi
-
-    # Parse expiresAt to epoch seconds
-    local expires_epoch
-    expires_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$expiresAt" +%s 2>/dev/null || \
-                    date -d "$expiresAt" +%s 2>/dev/null || \
-                    echo "0")
-
-    if [ "$expires_epoch" -eq 0 ]; then
-      # Unparseable expiresAt — treat as expired
-      continue
-    fi
-
-    # Only include non-expired wisps
-    if [ "$expires_epoch" -gt "$now_epoch" ]; then
-      echo "$wisp_json"
-    fi
-  done
+  done <<< "$wisp_bodies"
 }
 
 # Promote a wisp to a durable artifact. Two promotion paths:
