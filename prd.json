@@ -30,9 +30,9 @@
         "jq '.wispDefaultTtlMinutes' .issueloop.config.json | grep -q '90'",
         "python3 -c \"import json; json.load(open('.issueloop.config.json'))\""
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T03:00:00Z"
     },
     {
       "id": "US-002",
