@@ -139,3 +139,285 @@ All steps completed successfully:
 [22:06:20] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [22:06:20] 
 [22:06:20] Run 'claude' and use /implement to enter testing checkpoint.
+
+[20:53:56] ═══════════════════════════════════════════════════
+[20:53:56] ℹ️ Lock acquired
+[20:53:56] 
+[20:53:56] 🎯 Implementation Loop Starting
+[20:53:56] 
+[20:53:56]    Issue:      #13
+[20:53:56]    Branch:     ai/issue-13-beads-enhancements
+[20:53:56]    Max runs:   20
+[20:53:56] 
+[20:53:56] ═══════════════════════════════════════════════════
+[20:53:56] 
+[20:53:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:53:56] 🎯 Task: US-001 - Update config schema with new prefixes and settings
+[20:53:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:53:56] 
+[20:53:56]    Status:   ⏳ Attempt 1
+[20:53:56]    Iteration: 1 of 20
+[20:53:56] 
+[20:53:56] Gathering context for Claude...
+[20:53:57] Running Claude on US-001...
+--- Claude output for US-001 ---
+All verification commands passed. Config changes committed, pushed, and task log posted to issue #13.
+
+<result>PASS</result>
+--- End output ---
+[20:54:53] 
+[20:54:53] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:54:53] ✅ US-001 passed! Moving to next task...
+[20:54:53] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:54:53] 
+[20:54:53] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:54:53] 🎯 Task: US-002 - Extend prd.json schema docs with uid, formula, and compaction fields
+[20:54:53] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:54:53] 
+[20:54:53]    Status:   ⏳ Attempt 1
+[20:54:53]    Iteration: 2 of 20
+[20:54:53] 
+[20:54:53] Gathering context for Claude...
+[20:54:54] Running Claude on US-002...
+--- Claude output for US-002 ---
+All verification commands passed, changes committed, pushed, and task log posted.
+
+<result>PASS</result>
+--- End output ---
+[20:56:56] 
+[20:56:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:56:56] ✅ US-002 passed! Moving to next task...
+[20:56:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:56:56] 
+[20:56:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:56:56] 🎯 Task: US-003 - Update workflow rules with JSON event format and new comment prefixes
+[20:56:56] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:56:56] 
+[20:56:56]    Status:   ⏳ Attempt 1
+[20:56:56]    Iteration: 3 of 20
+[20:56:56] 
+[20:56:56] Gathering context for Claude...
+[20:56:58] Running Claude on US-003...
+--- Claude output for US-003 ---
+All verify commands passed, implementation committed and pushed, task log posted to issue #13.
+
+<result>PASS</result>
+--- End output ---
+[20:58:33] 
+[20:58:33] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:58:33] ✅ US-003 passed! Moving to next task...
+[20:58:33] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:58:33] 
+[20:58:33] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:58:33] 🎯 Task: US-004 - Create formula templates
+[20:58:33] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[20:58:33] 
+[20:58:33]    Status:   ⏳ Attempt 1
+[20:58:33]    Iteration: 4 of 20
+[20:58:33] 
+[20:58:33] Gathering context for Claude...
+[20:58:35] Running Claude on US-004...
+--- Claude output for US-004 ---
+All steps complete:
+
+1. Created `templates/formulas/bugfix.md` with reproduce → fix → verify topology
+2. Created `templates/formulas/feature.md` with schema → logic → UI → integration topology
+3. Created `templates/formulas/refactor.md` with analyze → extract → migrate → verify topology
+4. Each template includes default task phases, acceptance criteria patterns, and verify command patterns
+5. All 6 verify commands pass
+6. Implementation committed, prd.json updated, pushed, and task log posted
+
+<result>PASS</result>
+--- End output ---
+[21:00:25] 
+[21:00:25] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:00:25] ✅ US-004 passed! Moving to next task...
+[21:00:25] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:00:25] 
+[21:00:25] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:00:25] 🎯 Task: US-005 - Add formula auto-detection to planning commands
+[21:00:25] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:00:25] 
+[21:00:25]    Status:   ⏳ Attempt 1
+[21:00:25]    Iteration: 5 of 20
+[21:00:25] 
+[21:00:25] Gathering context for Claude...
+[21:00:26] Running Claude on US-005...
+--- Claude output for US-005 ---
+All done. Here's a summary of what was implemented:
+
+**il_1_plan.md changes:**
+- Added **Step 2b: Detect Formula Type** with a full decision tree (labels → keywords → default)
+- Keywords mapped: bugfix (bug, fix, broken, regression...), refactor (refactor, restructure, extract...), feature (add, create, implement...)
+- Default to `feature` when ambiguous
+- References `templates/formulas/{formula}.md` for each type
+- Added **Formula Integration** section linking formula to Phases 1, 2, and 5
+- Updated Key Rules with formula application and persistence items
+
+**custom-planning-protocol.md changes:**
+- Phase 1 overview now includes formula detection steps
+- Phase 1 "What To Do" includes formula detection as step 2
+- Discovery Summary template includes Formula Detection section
+- Phase 2 intro references formula template topology
+- Phase 5 prd.json schema updated with `formula`, `compaction`, `uid`, `discoveredFrom` fields
+
+<result>PASS</result>
+--- End output ---
+[21:03:06] 
+[21:03:06] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:03:06] ✅ US-005 passed! Moving to next task...
+[21:03:06] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:03:06] 
+[21:03:06] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:03:06] 🎯 Task: US-006 - Add uid generation, JSON events, and backward-compat to implement-loop
+[21:03:06] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:03:06] 
+[21:03:06]    Status:   ⏳ Attempt 1
+[21:03:06]    Iteration: 6 of 20
+[21:03:06] 
+[21:03:06] Gathering context for Claude...
+[21:03:08] Running Claude on US-006...
+--- Claude output for US-006 ---
+All verify commands passed, implementation committed, prd.json updated, pushed to remote, and task log posted to GitHub issue #13.
+
+**Summary of changes:**
+- **`.claude/scripts/implement-loop-lib.sh`** (new) — Sourceable library with:
+  - `generate_task_uid` — deterministic uid from issueNumber + normalizedTitle + discoveredFrom + ordinal (no timestamp)
+  - `extract_json_events_from_issue_comments` — state machine that parses only fenced json blocks under `### Event JSON` headings
+  - `initialize_missing_prd_fields` — backward-compat init for missing formula→"feature", compaction→{0,5}, per-story uid/discoveredFrom/discoverySource
+- **`.claude/scripts/implement-loop.sh`** — Sources the lib, calls backward-compat init before loop, PROMPT includes `=== JSON EVENT EMISSION ===` section with fenced block format
+
+<result>PASS</result>
+--- End output ---
+[21:05:44] 
+[21:05:44] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:05:44] ✅ US-006 passed! Moving to next task...
+[21:05:44] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:05:44] 
+[21:05:44] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:05:44] 🎯 Task: US-007 - Add discovered-task auto-enqueue to implement-loop-lib
+[21:05:44] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:05:44] 
+[21:05:44]    Status:   ⏳ Attempt 1
+[21:05:44]    Iteration: 7 of 20
+[21:05:44] 
+[21:05:44] Gathering context for Claude...
+[21:05:45] Running Claude on US-007...
+--- Claude output for US-007 ---
+All verification commands passed, implementation committed, pushed, and task log posted.
+
+<result>PASS</result>
+--- End output ---
+[21:07:23] 
+[21:07:23] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:07:23] ✅ US-007 passed! Moving to next task...
+[21:07:23] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:07:23] 
+[21:07:23] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:07:23] 🎯 Task: US-008 - Add compaction trigger and wisp support to implement-loop-lib
+[21:07:23] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:07:23] 
+[21:07:23]    Status:   ⏳ Attempt 1
+[21:07:23]    Iteration: 8 of 20
+[21:07:23] 
+[21:07:23] Gathering context for Claude...
+[21:07:25] Running Claude on US-008...
+--- Claude output for US-008 ---
+All verify commands passed, changes committed and pushed, task log posted to GitHub issue #13.
+
+<result>PASS</result>
+--- End output ---
+[21:10:15] 
+[21:10:15] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:10:15] ✅ US-008 passed! Moving to next task...
+[21:10:15] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:10:15] 
+[21:10:15] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:10:15] 🎯 Task: US-009 - Update il_2_implement.md command docs for new features
+[21:10:15] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:10:15] 
+[21:10:15]    Status:   ⏳ Attempt 1
+[21:10:15]    Iteration: 9 of 20
+[21:10:15] 
+[21:10:15] Gathering context for Claude...
+[21:10:16] Running Claude on US-009...
+--- Claude output for US-009 ---
+All steps completed successfully:
+
+1. **Implementation**: Updated `.claude/commands/il_2_implement.md` with:
+   - JSON event block format documentation (with v1 schema reference and examples in both pass/fail task log templates)
+   - Discovered-task output format for auto-enqueue section
+   - Compaction summaries documentation (every N task logs with supersedes pointers)
+   - Wisp collection and promotion rules documentation
+   - Post-task checklist item #7 for JSON event block
+   - Updated loop description, Fresh Context table, and "How the Background Script Works" section
+
+2. **Verification**: All 4 verify commands passed
+3. **prd.json**: Updated with `passes: true`, `attempts: 1`, `lastAttempt` set
+4. **Commits**: Implementation commit (3c98974) + prd.json commit (d9845a3)
+5. **Pushed** to remote
+6. **Task log** posted to GitHub issue #13 with Event JSON block
+
+<result>PASS</result>
+--- End output ---
+[21:12:55] 
+[21:12:55] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:12:55] ✅ US-009 passed! Moving to next task...
+[21:12:55] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:12:55] 
+[21:12:55] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:12:55] 🎯 Task: US-011 - Add functional shell tests for all new behaviors
+[21:12:55] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:12:55] 
+[21:12:55]    Status:   ⏳ Attempt 1
+[21:12:55]    Iteration: 10 of 20
+[21:12:55] 
+[21:12:55] Gathering context for Claude...
+[21:12:56] Running Claude on US-011...
+--- Claude output for US-011 ---
+All done. Here's what was accomplished:
+
+**Created `tests/test-enhancements.sh`** with 40 functional tests across 5 categories:
+
+1. **JSON Event Extraction (7 tests)** — Valid fenced block extraction, malformed JSON silently skipped, legacy format returns empty, non-Event-JSON blocks ignored, multiple events parsed
+2. **Discovered-Task Enqueue + Dedupe (5 tests)** — Task appended correctly with uid/discoveredFrom/priority, duplicate fingerprint rejected, different task accepted, fingerprint determinism
+3. **Compaction Trigger + Counter Reset (6 tests)** — Counter increments 0→4, resets to 0 on 5th log, restarts fresh after reset
+4. **Wisp Expiration Filtering (4 tests)** — Active wisps included, expired excluded, promoted excluded, no-expiresAt treated as expired
+5. **Legacy prd.json Backward Compatibility (10 tests)** — Missing formula/compaction/uid/discoveredFrom/discoverySource all initialized to safe defaults, uid deterministic on re-run, valid JSON output
+
+**Fixed 3 bugs** in `implement-loop-lib.sh` discovered during testing:
+- Fingerprint format mismatch (jq parens around criteria join)
+- macOS sed incompatibility in `collect_active_wisps` (rewrote with state machine parser)
+- UTC date parsing for wisp expiration (`TZ=UTC` prefix needed on macOS)
+
+<result>PASS</result>
+--- End output ---
+[21:18:27] 
+[21:18:27] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:18:27] ✅ US-011 passed! Moving to next task...
+[21:18:27] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:18:27] 
+[21:18:27] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:18:27] 🎯 Task: US-010 - Update README.md with all new features
+[21:18:27] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:18:27] 
+[21:18:27]    Status:   ⏳ Attempt 1
+[21:18:27]    Iteration: 11 of 20
+[21:18:27] 
+[21:18:27] Gathering context for Claude...
+[21:18:29] Running Claude on US-010...
+--- Claude output for US-010 ---
+All verification commands pass, changes committed, pushed, and task log posted.
+
+<result>PASS</result>
+--- End output ---
+[21:24:01] 
+[21:24:01] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:24:01] ✅ US-010 passed! Moving to next task...
+[21:24:01] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:24:01] 
+[21:24:01] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:24:01] 🎉 All tasks passing!
+[21:24:01] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[21:24:01] 
+[21:24:01] Run 'claude' and use /implement to enter testing checkpoint.
