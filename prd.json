@@ -12,7 +12,9 @@
       "priority": 1,
       "title": "Update config schema with new prefixes and settings",
       "description": "Add new comment prefixes (compactedSummary = '## 🧾 Compacted Summary', wisp = '## 🪶 Wisp') and new settings (taskLogJsonVersion=1, summaryEveryNTaskLogs=5, wispDefaultTtlMinutes=90) to .issueloop.config.json.",
-      "files": [".issueloop.config.json"],
+      "files": [
+        ".issueloop.config.json"
+      ],
       "dependsOn": [],
       "acceptanceCriteria": [
         "Config has commentPrefixes.compactedSummary set to '## 🧾 Compacted Summary'",
@@ -40,7 +42,9 @@
       "priority": 1,
       "title": "Extend prd.json schema docs with uid, formula, and compaction fields",
       "description": "Update prd.json schema documentation in planning-guide.md with new root fields (formula, compaction) and per-story fields (uid, discoveredFrom, discoverySource). uid is deterministic: hash(issueNumber + normalizedTitle + discoveredFrom + ordinalWithinParent). No timestamp in uid inputs. Document ordinal counting rule within each parent. discoveredFrom=null for planned tasks.",
-      "files": [".claude/rules/planning-guide.md"],
+      "files": [
+        ".claude/rules/planning-guide.md"
+      ],
       "dependsOn": [],
       "acceptanceCriteria": [
         "planning-guide.md prd.json example includes 'formula' field",
@@ -69,7 +73,9 @@
       "priority": 1,
       "title": "Update workflow rules with JSON event format and new comment prefixes",
       "description": "Add compactedSummary and wisp comment prefixes to github-issue-workflow.md. Document the compact JSON event block: MUST be a fenced json code block under '### Event JSON' heading. Parser extracts only that fenced block, not arbitrary comment text. Add parser fallback rule (JSON first, legacy markdown fallback). Document strict wisp promotion rules: a wisp becomes durable only by explicit promotion to Discovery Note or enqueued as new task. Un-promoted wisps are lost on expiration.",
-      "files": [".claude/rules/github-issue-workflow.md"],
+      "files": [
+        ".claude/rules/github-issue-workflow.md"
+      ],
       "dependsOn": [],
       "acceptanceCriteria": [
         "Comment prefix table includes '## 🧾 Compacted Summary'",
@@ -101,8 +107,14 @@
       "priority": 2,
       "title": "Create formula templates",
       "description": "Create three formula template files in templates/formulas/: bugfix.md (reproduce→fix→verify topology), feature.md (schema→logic→UI→integration topology), refactor.md (analyze→extract→migrate→verify topology). Each defines default task phases, acceptance criteria patterns, and verify command patterns for that issue type.",
-      "files": ["templates/formulas/bugfix.md", "templates/formulas/feature.md", "templates/formulas/refactor.md"],
-      "dependsOn": ["US-002"],
+      "files": [
+        "templates/formulas/bugfix.md",
+        "templates/formulas/feature.md",
+        "templates/formulas/refactor.md"
+      ],
+      "dependsOn": [
+        "US-002"
+      ],
       "acceptanceCriteria": [
         "templates/formulas/bugfix.md exists with reproduce→fix→verify topology",
         "templates/formulas/feature.md exists with schema→logic→UI→integration topology",
@@ -128,8 +140,14 @@
       "priority": 2,
       "title": "Add formula auto-detection to planning commands",
       "description": "Update il_1_plan.md to include a formula auto-detection decision tree that selects bugfix/feature/refactor based on issue text keywords and labels. Default to 'feature' when ambiguous. Reference formula templates in templates/formulas/. Update custom-planning-protocol.md Phase 1 to include formula detection as part of exploration. Selected formula persisted to prd.json.formula.",
-      "files": [".claude/commands/il_1_plan.md", ".claude/rules/custom-planning-protocol.md"],
-      "dependsOn": ["US-002", "US-004"],
+      "files": [
+        ".claude/commands/il_1_plan.md",
+        ".claude/rules/custom-planning-protocol.md"
+      ],
+      "dependsOn": [
+        "US-002",
+        "US-004"
+      ],
       "acceptanceCriteria": [
         "il_1_plan.md contains formula detection decision tree with keyword matching",
         "il_1_plan.md references formula templates in templates/formulas/",
@@ -153,8 +171,14 @@
       "priority": 2,
       "title": "Add uid generation, JSON events, and backward-compat to implement-loop",
       "description": "Extract all helper functions into a new sourceable .claude/scripts/implement-loop-lib.sh. Keep implement-loop.sh as orchestration wrapper that sources the lib. Add generate_task_uid (deterministic: issueNumber + normalizedTitle + discoveredFrom + ordinal, no timestamp). Add extract_json_events_from_issue_comments that parses only fenced json blocks under '### Event JSON' headings. Update PROMPT template to instruct JSON event emission. Add backward-compatible initialization: if formula, compaction, uid, or discoveredFrom are missing from prd.json, initialize to safe defaults (formula='feature', compaction={taskLogCountSinceLastSummary:0, summaryEveryNTaskLogs:5}).",
-      "files": [".claude/scripts/implement-loop.sh", ".claude/scripts/implement-loop-lib.sh"],
-      "dependsOn": ["US-001", "US-003"],
+      "files": [
+        ".claude/scripts/implement-loop.sh",
+        ".claude/scripts/implement-loop-lib.sh"
+      ],
+      "dependsOn": [
+        "US-001",
+        "US-003"
+      ],
       "acceptanceCriteria": [
         "implement-loop-lib.sh created with all helper functions",
         "implement-loop.sh sources implement-loop-lib.sh",
@@ -176,9 +200,9 @@
         "bash -n .claude/scripts/implement-loop-lib.sh && echo 'lib syntax OK'",
         "bash -n .claude/scripts/implement-loop.sh && echo 'main syntax OK'"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-09T22:00:00Z"
     },
     {
       "id": "US-007",
@@ -186,8 +210,12 @@
       "priority": 3,
       "title": "Add discovered-task auto-enqueue to implement-loop-lib",
       "description": "Add enqueue_discovered_tasks function to implement-loop-lib.sh. Deduplicate using fingerprint hash of title + description + acceptanceCriteria + parent uid (not just title + parent uid). Append to prd.json.userStories with generated uid (via generate_task_uid), discoveredFrom=parent uid, ordinal within parent, default priority=parent+1, dependsOn=[parent id]. Commit prd.json state update before next task selection.",
-      "files": [".claude/scripts/implement-loop-lib.sh"],
-      "dependsOn": ["US-006"],
+      "files": [
+        ".claude/scripts/implement-loop-lib.sh"
+      ],
+      "dependsOn": [
+        "US-006"
+      ],
       "acceptanceCriteria": [
         "enqueue_discovered_tasks function exists in implement-loop-lib.sh",
         "Dedupe fingerprint includes title + description + acceptanceCriteria + parent uid",
@@ -212,8 +240,12 @@
       "priority": 3,
       "title": "Add compaction trigger and wisp support to implement-loop-lib",
       "description": "Add maybe_post_compaction_summary to implement-loop-lib.sh: increments prd.json.compaction.taskLogCountSinceLastSummary after each task log, posts '## 🧾 Compacted Summary' when count >= 5 with explicit references to covered task UIDs/attempts and a supersedes pointer to previous compaction comment (URL or 'none'), resets counter. Add collect_active_wisps that filters wisps by expiresAt timestamp. Add promote_wisp function that converts a wisp to a Discovery Note or enqueues as new task, marking promoted:true. Update context assembly to include compacted summaries and active wisps.",
-      "files": [".claude/scripts/implement-loop-lib.sh"],
-      "dependsOn": ["US-006"],
+      "files": [
+        ".claude/scripts/implement-loop-lib.sh"
+      ],
+      "dependsOn": [
+        "US-006"
+      ],
       "acceptanceCriteria": [
         "maybe_post_compaction_summary function exists in implement-loop-lib.sh",
         "collect_active_wisps function exists in implement-loop-lib.sh",
@@ -245,8 +277,14 @@
       "priority": 3,
       "title": "Update il_2_implement.md command docs for new features",
       "description": "Update il_2_implement.md to reference JSON event emission (fenced json block under ### Event JSON), discovered-task output format for auto-enqueue, compaction trigger behavior, wisp collection in context assembly, and wisp promotion rules. Update the post-task checklist to include JSON event block item.",
-      "files": [".claude/commands/il_2_implement.md"],
-      "dependsOn": ["US-006", "US-007", "US-008"],
+      "files": [
+        ".claude/commands/il_2_implement.md"
+      ],
+      "dependsOn": [
+        "US-006",
+        "US-007",
+        "US-008"
+      ],
       "acceptanceCriteria": [
         "il_2_implement.md references JSON event block format in task log section",
         "il_2_implement.md documents discovered-task output format for auto-enqueue",
@@ -270,8 +308,21 @@
       "priority": 4,
       "title": "Update README.md with all new features",
       "description": "Update the user-facing README to document all five enhancements: structured JSON task log events with fenced block format, discovered-task auto-enqueue behavior with fingerprint dedupe, formula-based planning (bugfix/feature/refactor), compaction summaries every 5 task logs with supersedes pointers, and wisp semantics with expiration rules and promotion path.",
-      "files": ["README.md"],
-      "dependsOn": ["US-001", "US-002", "US-003", "US-004", "US-005", "US-006", "US-007", "US-008", "US-009", "US-011"],
+      "files": [
+        "README.md"
+      ],
+      "dependsOn": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004",
+        "US-005",
+        "US-006",
+        "US-007",
+        "US-008",
+        "US-009",
+        "US-011"
+      ],
       "acceptanceCriteria": [
         "README documents structured task log events with JSON event block format",
         "README documents discovered-task auto-enqueue behavior",
@@ -296,8 +347,15 @@
       "priority": 3,
       "title": "Add functional shell tests for all new behaviors",
       "description": "Create tests/test-enhancements.sh that sources implement-loop-lib.sh and tests five critical behaviors with fixture data: (1) JSON event extraction from fenced block + fallback to legacy when missing/malformed, (2) discovered-task enqueue with fingerprint dedupe rejection, (3) compaction trigger on 5th task log + counter reset, (4) wisp expiration filtering (expired excluded, active included), (5) legacy prd.json backward compatibility (missing formula/compaction/uid initialized to safe defaults). Each test asserts expected output.",
-      "files": ["tests/test-enhancements.sh"],
-      "dependsOn": ["US-003", "US-006", "US-007", "US-008"],
+      "files": [
+        "tests/test-enhancements.sh"
+      ],
+      "dependsOn": [
+        "US-003",
+        "US-006",
+        "US-007",
+        "US-008"
+      ],
       "acceptanceCriteria": [
         "Test file exists at tests/test-enhancements.sh",
         "Test: JSON event extraction from fenced block succeeds; malformed/missing falls back to legacy",
