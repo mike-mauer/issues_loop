@@ -274,6 +274,8 @@
     "wc -l < .agents/skills/issues-loop/SKILL.md"
   ],
   "debugState": {
-    "status": "testing"
+    "status": "verified",
+    "debugAttempts": 0,
+    "debugHistory": []
   }
 }
