@@ -272,5 +272,8 @@
     "find .agents/skills/issues-loop -type f | wc -l",
     "head -5 .agents/skills/issues-loop/SKILL.md",
     "wc -l < .agents/skills/issues-loop/SKILL.md"
-  ]
+  ],
+  "debugState": {
+    "status": "testing"
+  }
 }
