@@ -33,9 +33,9 @@
         "head -5 .agents/skills/issues-loop/SKILL.md | grep -q 'name: issues-loop' && echo PASS",
         "wc -l < .agents/skills/issues-loop/SKILL.md | awk '{if ($1 < 500) print \"PASS\"; else print \"FAIL\"}'"
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T18:08:00Z"
     },
     {
       "id": "US-002",
