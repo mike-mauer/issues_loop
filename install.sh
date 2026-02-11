@@ -86,13 +86,18 @@ fi
 echo ""
 echo "📁 Installing workflow files..."
 
-# Create directories
+# Create directories - Claude Code
 mkdir -p "$TARGET_DIR/.claude/commands"
 mkdir -p "$TARGET_DIR/.claude/rules"
 mkdir -p "$TARGET_DIR/.claude/scripts"
 mkdir -p "$TARGET_DIR/.claude/templates"
 mkdir -p "$TARGET_DIR/.github/ISSUE_TEMPLATE"
 mkdir -p "$TARGET_DIR/archive"
+
+# Create directories - Codex skill
+mkdir -p "$TARGET_DIR/.agents/skills/issues-loop/references/formulas"
+mkdir -p "$TARGET_DIR/.agents/skills/issues-loop/scripts"
+mkdir -p "$TARGET_DIR/.agents/skills/issues-loop/assets"
 
 # Create archive placeholder
 touch "$TARGET_DIR/archive/.gitkeep"
@@ -128,7 +133,7 @@ if [ -f "$SCRIPT_DIR/.claude/rules/github-issue-workflow.md" ]; then
         cp "$SCRIPT_DIR/templates/ISSUE_TEMPLATE_ai_request.md" "$TARGET_DIR/.github/ISSUE_TEMPLATE/ai_request.md"
     fi
 
-    echo "✅ Workflow files copied"
+    echo "✅ Claude Code workflow files copied"
     echo ""
     echo "📝 Note: CLAUDE.md.template created - merge into your existing CLAUDE.md"
     echo "   or rename to CLAUDE.md if you don't have one yet."
@@ -137,6 +142,28 @@ else
     echo "Creating files from template..."
     # (Files would be created inline here in a real deployment)
     echo "✅ Workflow files created"
+fi
+
+# Copy Codex skill (issues-loop)
+if [ -d "$SCRIPT_DIR/.agents/skills/issues-loop" ]; then
+    echo ""
+    echo "📁 Installing Codex skill (issues-loop)..."
+
+    # Copy SKILL.md
+    cp "$SCRIPT_DIR/.agents/skills/issues-loop/SKILL.md" "$TARGET_DIR/.agents/skills/issues-loop/SKILL.md"
+
+    # Copy references (including formulas subdirectory)
+    cp "$SCRIPT_DIR/.agents/skills/issues-loop/references/"*.md "$TARGET_DIR/.agents/skills/issues-loop/references/"
+    cp "$SCRIPT_DIR/.agents/skills/issues-loop/references/formulas/"*.md "$TARGET_DIR/.agents/skills/issues-loop/references/formulas/"
+
+    # Copy scripts and make executable
+    cp "$SCRIPT_DIR/.agents/skills/issues-loop/scripts/"*.sh "$TARGET_DIR/.agents/skills/issues-loop/scripts/"
+    chmod +x "$TARGET_DIR/.agents/skills/issues-loop/scripts/"*.sh
+
+    # Copy assets
+    cp "$SCRIPT_DIR/.agents/skills/issues-loop/assets/"* "$TARGET_DIR/.agents/skills/issues-loop/assets/"
+
+    echo "✅ Codex skill (issues-loop) installed"
 fi
 
 echo ""
@@ -172,9 +199,14 @@ echo ""
 echo "2. Create an issue and add the 'AI' label"
 echo ""
 echo "3. In Claude Code, run:"
-echo "   /issues    - List open issues"
-echo "   /issue 42  - Load issue #42"
-echo "   /implement - Start implementation"
+echo "   /il_list         - List open issues"
+echo "   /il_1_plan 42    - Plan issue #42"
+echo "   /il_2_implement  - Start implementation"
+echo ""
+echo "   In Codex, use the issues-loop skill:"
+echo "   il-list           - List open issues"
+echo "   il-1-plan 42      - Plan issue #42"
+echo "   il-2-implement    - Start implementation"
 echo ""
 echo "📖 Full documentation: README.md"
 echo ""
