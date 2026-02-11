@@ -7,7 +7,7 @@
   "status": "approved",
   "formula": "feature",
   "compaction": {
-    "taskLogCountSinceLastSummary": 1,
+    "taskLogCountSinceLastSummary": 2,
     "summaryEveryNTaskLogs": 5
   },
   "userStories": [
