@@ -1,0 +1,281 @@
+{
+  "project": "codex-skills-translation",
+  "issueNumber": 16,
+  "branchName": "ai/issue-16-codex-skills",
+  "description": "Translate to Codex skills/commands",
+  "generatedAt": "2026-02-10T00:00:00Z",
+  "status": "approved",
+  "formula": "feature",
+  "compaction": {
+    "taskLogCountSinceLastSummary": 0,
+    "summaryEveryNTaskLogs": 5
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "uid": "tsk_3f2bab80ee66",
+      "phase": 1,
+      "priority": 1,
+      "title": "Create skill directory structure and SKILL.md",
+      "description": "Create the .agents/skills/issues-loop/ directory tree with all subdirectories (references/, references/formulas/, scripts/, assets/). Write the SKILL.md file with valid agentskills.io frontmatter (name: issues-loop) and a command dispatcher body that describes all 6 commands and how to invoke them, staying under 500 lines.",
+      "files": [
+        ".agents/skills/issues-loop/SKILL.md"
+      ],
+      "dependsOn": [],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "Directory .agents/skills/issues-loop/ exists with subdirs references/, scripts/, assets/",
+        "SKILL.md has valid frontmatter with name: issues-loop matching directory name",
+        "SKILL.md body describes all 6 commands with invocation syntax",
+        "SKILL.md is under 500 lines"
+      ],
+      "verifyCommands": [
+        "test -d .agents/skills/issues-loop/references && test -d .agents/skills/issues-loop/scripts && test -d .agents/skills/issues-loop/assets && echo PASS",
+        "head -5 .agents/skills/issues-loop/SKILL.md | grep -q 'name: issues-loop' && echo PASS",
+        "wc -l < .agents/skills/issues-loop/SKILL.md | awk '{if ($1 < 500) print \"PASS\"; else print \"FAIL\"}'"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T18:08:00Z"
+    },
+    {
+      "id": "US-002",
+      "uid": "tsk_a050164110b3",
+      "phase": 1,
+      "priority": 2,
+      "title": "Port shared reference documents",
+      "description": "Port the three shared rules documents from .claude/rules/ to references/ within the skill. Adapt .claude/rules/ path references to skill-relative references/ paths and make Claude-specific tool names generic or Codex-compatible. Preserve all workflow logic, state machine definitions, and specifications.",
+      "files": [
+        ".agents/skills/issues-loop/references/github-issue-workflow.md",
+        ".agents/skills/issues-loop/references/planning-guide.md",
+        ".agents/skills/issues-loop/references/custom-planning-protocol.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "All 3 reference files exist in references/",
+        "File paths reference references/ instead of .claude/rules/",
+        "Claude-specific tool names adapted or made generic",
+        "All workflow logic and specifications preserved"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/github-issue-workflow.md && test -f .agents/skills/issues-loop/references/planning-guide.md && test -f .agents/skills/issues-loop/references/custom-planning-protocol.md && echo PASS",
+        "! grep -rq '\\.claude/rules/' .agents/skills/issues-loop/references/github-issue-workflow.md .agents/skills/issues-loop/references/planning-guide.md .agents/skills/issues-loop/references/custom-planning-protocol.md && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T19:15:00Z"
+    },
+    {
+      "id": "US-003",
+      "uid": "tsk_3acd6b1c1a89",
+      "phase": 1,
+      "priority": 3,
+      "title": "Port utility command references (il-setup, il-list, il-validate)",
+      "description": "Translate the il_setup (272 lines), il_list (65 lines), and il_validate (191 lines) commands to Codex skill reference files. Adapt command names to hyphens, update cross-references to skill-relative paths, and preserve all gh CLI operations, label creation, and validation checks.",
+      "files": [
+        ".agents/skills/issues-loop/references/il-setup.md",
+        ".agents/skills/issues-loop/references/il-list.md",
+        ".agents/skills/issues-loop/references/il-validate.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "All 3 reference files exist in references/",
+        "Command names use hyphens (il-setup) not underscores (il_setup)",
+        "Cross-references point to skill-relative paths",
+        "All gh CLI and git operations preserved"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/il-setup.md && test -f .agents/skills/issues-loop/references/il-list.md && test -f .agents/skills/issues-loop/references/il-validate.md && echo PASS",
+        "! grep -q '/il_setup' .agents/skills/issues-loop/references/il-setup.md && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T20:30:00Z"
+    },
+    {
+      "id": "US-004",
+      "uid": "tsk_b8ccf2762a51",
+      "phase": 2,
+      "priority": 4,
+      "title": "Port il-1-plan command reference",
+      "description": "Translate the il_1_plan command (501 lines) to a Codex skill reference file. This includes the 8-step planning workflow: prerequisites, issue fetch, formula detection, completeness evaluation, scoping questions, custom planning protocol, state detection, and branch setup. Adapt Claude-specific tool references and ensure cross-references to planning-guide.md and custom-planning-protocol.md use skill-relative paths.",
+      "files": [
+        ".agents/skills/issues-loop/references/il-1-plan.md"
+      ],
+      "dependsOn": [
+        "US-001",
+        "US-002"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "Reference file exists at references/il-1-plan.md",
+        "All 8 steps of the planning workflow preserved",
+        "Formula detection logic preserved",
+        "References to other docs use skill-relative paths",
+        "Claude-specific tool names adapted for Codex"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/il-1-plan.md && echo PASS",
+        "grep -q 'Formula Detection' .agents/skills/issues-loop/references/il-1-plan.md && echo PASS",
+        "grep -q 'prd.json' .agents/skills/issues-loop/references/il-1-plan.md && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T21:00:00Z"
+    },
+    {
+      "id": "US-005",
+      "uid": "tsk_2ae8dcf0ed5f",
+      "phase": 2,
+      "priority": 5,
+      "title": "Port il-2-implement command reference",
+      "description": "Translate the il_2_implement command (1,095 lines) to a Codex skill reference file. This is the most complex command covering task execution loop, fresh context principle, testing checkpoint, debug flow, task log format with Event JSON, and background script orchestration. Ensure script references use skill-relative paths (scripts/implement-loop.sh).",
+      "files": [
+        ".agents/skills/issues-loop/references/il-2-implement.md"
+      ],
+      "dependsOn": [
+        "US-001",
+        "US-002"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "Reference file exists at references/il-2-implement.md",
+        "Task execution loop and fresh context principle preserved",
+        "Testing checkpoint and debug flow preserved",
+        "Task log format and Event JSON schema preserved",
+        "Script references use skill-relative paths"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/il-2-implement.md && echo PASS",
+        "grep -q 'Testing Checkpoint' .agents/skills/issues-loop/references/il-2-implement.md && echo PASS",
+        "grep -q 'Event JSON' .agents/skills/issues-loop/references/il-2-implement.md && echo PASS",
+        "grep -q 'scripts/' .agents/skills/issues-loop/references/il-2-implement.md && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T22:00:00Z"
+    },
+    {
+      "id": "US-006",
+      "uid": "tsk_20e06cb029eb",
+      "phase": 2,
+      "priority": 6,
+      "title": "Port il-3-close command reference",
+      "description": "Translate the il_3_close command (548 lines) to a Codex skill reference file. Covers final report generation, PR creation with gh CLI, and the archive workflow. Adapt file path references and command invocation syntax to use hyphens.",
+      "files": [
+        ".agents/skills/issues-loop/references/il-3-close.md"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "Reference file exists at references/il-3-close.md",
+        "Final report template and PR creation logic preserved",
+        "Archive flow preserved",
+        "Command references use hyphens"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/il-3-close.md && echo PASS",
+        "grep -q 'Final Report' .agents/skills/issues-loop/references/il-3-close.md && echo PASS",
+        "grep -q 'archive' .agents/skills/issues-loop/references/il-3-close.md && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T23:30:00Z"
+    },
+    {
+      "id": "US-007",
+      "uid": "tsk_09ca7a7bf595",
+      "phase": 3,
+      "priority": 7,
+      "title": "Port formula templates, assets, and scripts",
+      "description": "Port the 3 formula templates to references/formulas/, the GitHub issue template to assets/, and the 2 shell scripts to scripts/. Formula templates and issue template need minimal adaptation (path references). Shell scripts need path updates for skill-relative locations and any Claude-specific integrations adapted.",
+      "files": [
+        ".agents/skills/issues-loop/references/formulas/bugfix.md",
+        ".agents/skills/issues-loop/references/formulas/feature.md",
+        ".agents/skills/issues-loop/references/formulas/refactor.md",
+        ".agents/skills/issues-loop/assets/issue-template.md",
+        ".agents/skills/issues-loop/scripts/implement-loop.sh",
+        ".agents/skills/issues-loop/scripts/implement-loop-lib.sh"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "All 3 formula files exist in references/formulas/",
+        "Issue template exists in assets/",
+        "Both shell scripts exist in scripts/ and are executable",
+        "Script path references updated for skill-relative locations"
+      ],
+      "verifyCommands": [
+        "test -f .agents/skills/issues-loop/references/formulas/bugfix.md && test -f .agents/skills/issues-loop/references/formulas/feature.md && test -f .agents/skills/issues-loop/references/formulas/refactor.md && echo PASS",
+        "test -f .agents/skills/issues-loop/assets/issue-template.md && echo PASS",
+        "test -x .agents/skills/issues-loop/scripts/implement-loop.sh && test -x .agents/skills/issues-loop/scripts/implement-loop-lib.sh && echo PASS"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-10T23:45:00Z"
+    },
+    {
+      "id": "US-008",
+      "uid": "tsk_6db7ed99a9cf",
+      "phase": 3,
+      "priority": 8,
+      "title": "Update install.sh and end-to-end validation",
+      "description": "Update install.sh to copy the .agents/skills/issues-loop/ directory to target projects during installation. Add directory creation, file copying, and script chmod steps. Run end-to-end validation that all 15+ skill files exist and are properly structured.",
+      "files": [
+        "install.sh"
+      ],
+      "dependsOn": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004",
+        "US-005",
+        "US-006",
+        "US-007"
+      ],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": [
+        "install.sh creates .agents/skills/ directory in target",
+        "install.sh copies the issues-loop skill with all subdirectories",
+        "install.sh makes scripts executable",
+        "All skill files present (15+ files)"
+      ],
+      "verifyCommands": [
+        "grep -q '.agents/skills' install.sh && echo PASS",
+        "grep -q 'issues-loop' install.sh && echo PASS",
+        "find .agents/skills/issues-loop -type f | wc -l | awk '{if ($1 >= 15) print \"PASS: \" $1 \" files\"; else print \"FAIL: only \" $1 \" files\"}'"
+      ],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-11T00:40:00Z"
+    }
+  ],
+  "globalVerifyCommands": [
+    "find .agents/skills/issues-loop -type f | wc -l",
+    "head -5 .agents/skills/issues-loop/SKILL.md",
+    "wc -l < .agents/skills/issues-loop/SKILL.md"
+  ],
+  "debugState": {
+    "status": "verified",
+    "debugAttempts": 0,
+    "debugHistory": []
+  }
+}
