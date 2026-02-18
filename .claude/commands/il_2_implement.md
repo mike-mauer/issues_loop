@@ -8,9 +8,11 @@ The loop script (`.claude/scripts/implement-loop.sh`) provides:
 - Automatic retries (up to 3 attempts per task)
 - Task logs posted to GitHub issue (with structured JSON event blocks)
 - Discovered-task auto-enqueue from task output
+- Parallel findings-only code review lane with structured `review_log` events
 - Compaction summaries every N task logs
 - Wisp collection for ephemeral context hints
 - Stops on completion or blocker
+- Final review gate before testing checkpoint
 
 For each task, the loop:
 1. Reads `prd.json` for task status
@@ -20,13 +22,33 @@ For each task, the loop:
 5. Updates `passes` status
 6. Logs learnings to GitHub issue
 
+## Hybrid Review Lane (Findings-Only)
+
+The implementation lane and review lane run in parallel:
+- After each verified PASS task log, a **code-review agent** is spawned asynchronously.
+- The reviewer is **read-only**: no edits, commits, pushes, or `prd.json` mutation.
+- Review results are posted as `## 🔎 Code Review: ...` with `### Review Event JSON`.
+- The orchestrator is the only writer that can enqueue follow-up tasks.
+
+### Severity Routing
+- `critical`/`high` findings above confidence threshold auto-enqueue tasks.
+- `medium`/`low` findings remain open for explicit approval.
+- Findings are deduplicated by stable key: `reviewId:findingId`.
+
+### Final Gate
+- When all implementation tasks pass, a consolidated `FINAL` review runs on `main..HEAD`.
+- The loop does not enter testing checkpoint while blocking findings remain open.
+- If blocked, label `AI: Review` is applied and follow-up tasks are enqueued.
+
 ## Usage
 ```
 /il_2_implement              # Create branch if needed + launch background loop
 /il_2_implement verify       # Re-run verification for current task
+/il_2_implement review-status # Show review lane summary (findings by severity/status)
+/il_2_implement review-approve <reviewId> <findingId|all> # Approve medium/low findings for enqueue
 ```
 
-**There is only one mode: Loop Mode.** This command:
+**Default execution mode is Loop Mode.** This command:
 1. Creates the branch from `prd.json` if it doesn't exist
 2. Launches `.claude/scripts/implement-loop.sh` for fresh context per task
 

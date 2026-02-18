@@ -111,8 +111,8 @@ extract_json_events_from_issue_comments() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Initialize missing fields in prd.json to safe defaults.
-# Handles legacy prd.json files that lack formula, compaction, or per-story
-# uid/discoveredFrom/discoverySource fields.
+# Handles legacy prd.json files that lack formula, compaction, quality, or
+# per-story uid/discoveredFrom/discoverySource fields.
 #
 # Args:
 #   $1 - path to prd.json (default: "prd.json")
@@ -148,6 +148,94 @@ initialize_missing_prd_fields() {
     : # compaction exists
   else
     jq '.compaction = {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 5}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+
+  # Initialize missing root-level quality field for review lane state
+  if jq -e '.quality' "$tmp_file" >/dev/null 2>&1; then
+    : # quality exists
+  else
+    jq '.quality = {
+      "reviewMode": "hybrid",
+      "reviewPolicy": {
+        "autoEnqueueSeverities": ["critical", "high"],
+        "approvalRequiredSeverities": ["medium", "low"],
+        "minConfidenceForAutoEnqueue": 0.75,
+        "maxFindingsPerReview": 5
+      },
+      "findings": [],
+      "processedReviewKeys": [],
+      "finalReview": {
+        "status": "pending",
+        "reviewedCommit": null,
+        "lastReviewId": null,
+        "updatedAt": null
+      }
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+
+  # Fill missing quality subfields on partially initialized files
+  if jq -e '.quality.reviewMode' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewMode = "hybrid"' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy = {
+      "autoEnqueueSeverities": ["critical", "high"],
+      "approvalRequiredSeverities": ["medium", "low"],
+      "minConfidenceForAutoEnqueue": 0.75,
+      "maxFindingsPerReview": 5
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.autoEnqueueSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical", "high"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.approvalRequiredSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["medium", "low"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.minConfidenceForAutoEnqueue = 0.75' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.maxFindingsPerReview' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.maxFindingsPerReview = 5' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.findings' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.findings = []' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.processedReviewKeys' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.processedReviewKeys = []' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview = {
+      "status": "pending",
+      "reviewedCommit": null,
+      "lastReviewId": null,
+      "updatedAt": null
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.status' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.status = "pending"' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.reviewedCommit' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.reviewedCommit = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.lastReviewId' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.lastReviewId = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.updatedAt' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.updatedAt = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
 
@@ -249,6 +337,7 @@ compute_task_fingerprint() {
 #   $5 - discovered tasks JSON array (compact JSON string)
 #        Each element: {"title":"...","description":"...","acceptanceCriteria":[...],"verifyCommands":[...],"dependsOn":[...]}
 #   $6 - issue number
+#   $7 - discovery source tag (default: "task_log")
 #
 # Side effects: modifies prd.json in place, commits the change
 enqueue_discovered_tasks() {
@@ -258,6 +347,7 @@ enqueue_discovered_tasks() {
   local parent_priority="$4"
   local discovered_json="$5"
   local issue_number="$6"
+  local discovery_source="${7:-task_log}"
 
   if [ -z "$discovered_json" ] || [ "$discovered_json" = "[]" ] || [ "$discovered_json" = "null" ]; then
     return 0
@@ -351,6 +441,7 @@ enqueue_discovered_tasks() {
        --argjson verify "$d_verify_json" \
        --argjson depends "$d_depends_json" \
        --arg parent_uid "$parent_uid" \
+       --arg discovery_source "$discovery_source" \
        '.userStories += [{
          "id": $id,
          "uid": $uid,
@@ -361,7 +452,7 @@ enqueue_discovered_tasks() {
          "files": [],
          "dependsOn": $depends,
          "discoveredFrom": $parent_uid,
-         "discoverySource": "task_log",
+         "discoverySource": $discovery_source,
          "acceptanceCriteria": $criteria,
          "verifyCommands": $verify,
          "passes": false,
@@ -383,6 +474,322 @@ enqueue_discovered_tasks() {
   fi
 
   return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Review Event Extraction and State Management
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Extract review JSON event blocks from issue comments.
+# Parses only fenced json code blocks under '### Review Event JSON' headings.
+#
+# Args:
+#   $1 - raw issue comments text
+#
+# Output: one JSON review event object per line (compact)
+extract_review_events_from_issue_comments() {
+  local comments="$1"
+  local in_event_section=0
+  local in_json_block=0
+  local json_buffer=""
+
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '### Review Event JSON'; then
+      in_event_section=1
+      in_json_block=0
+      json_buffer=""
+      continue
+    fi
+
+    if [ "$in_event_section" -eq 1 ]; then
+      if echo "$line" | grep -qE '^\s*```json\s*$'; then
+        in_json_block=1
+        json_buffer=""
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ] && echo "$line" | grep -qE '^\s*```\s*$'; then
+        if [ -n "$json_buffer" ]; then
+          if echo "$json_buffer" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            local event_type
+            event_type=$(echo "$json_buffer" | jq -r '.type // ""' 2>/dev/null)
+            if [ "$event_type" = "review_log" ]; then
+              echo "$json_buffer"
+            fi
+          fi
+        fi
+        in_json_block=0
+        in_event_section=0
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ]; then
+        json_buffer="${json_buffer}${line}"
+        continue
+      fi
+
+      if echo "$line" | grep -qE '^#{1,4} |^---'; then
+        in_event_section=0
+        in_json_block=0
+        json_buffer=""
+      fi
+    fi
+  done <<< "$comments"
+}
+
+# Verify that a review log with Review Event JSON was posted to GitHub.
+#
+# Args:
+#   $1 - issue number
+#   $2 - review scope label (e.g., US-003 or FINAL)
+#   $3 - reviewed commit hash (optional; if provided must match)
+#
+# Output: verified review event JSON object, or empty
+# Returns: 0 if verified, 1 otherwise
+verify_review_log_on_github() {
+  local issue_number="$1"
+  local scope_label="$2"
+  local reviewed_commit="$3"
+
+  local recent_comments
+  recent_comments=$(gh issue view "$issue_number" --json comments \
+    --jq '.comments[-30:][] | @json' 2>/dev/null || echo "")
+
+  if [ -z "$recent_comments" ]; then
+    return 1
+  fi
+
+  local review_event=""
+  while IFS= read -r raw_comment; do
+    [ -z "$raw_comment" ] && continue
+    local c_body
+    c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+
+    if echo "$c_body" | grep -q "## 🔎 Code Review: ${scope_label}"; then
+      local extracted
+      extracted=$(extract_review_events_from_issue_comments "$c_body" 2>/dev/null | head -1)
+      if [ -z "$extracted" ]; then
+        continue
+      fi
+
+      local extracted_commit
+      extracted_commit=$(echo "$extracted" | jq -r '.reviewedCommit // ""' 2>/dev/null)
+      if [ -n "$reviewed_commit" ] && [ "$reviewed_commit" != "$extracted_commit" ]; then
+        continue
+      fi
+
+      review_event="$extracted"
+    fi
+  done <<< "$recent_comments"
+
+  if [ -z "$review_event" ]; then
+    return 1
+  fi
+
+  echo "$review_event"
+  return 0
+}
+
+# Ingest findings from a single review event into prd.json quality state.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - review event JSON object (compact)
+#   $3 - issue number
+#
+# Output: integer count of new findings ingested
+ingest_review_findings_into_prd() {
+  local prd_file="${1:-prd.json}"
+  local review_event="$2"
+  local issue_number="$3"
+
+  if [ -z "$review_event" ] || [ "$review_event" = "null" ]; then
+    echo "0"
+    return 0
+  fi
+
+  local findings_count
+  findings_count=$(echo "$review_event" | jq '.findings | length' 2>/dev/null || echo "0")
+  if [ "$findings_count" -eq 0 ]; then
+    echo "0"
+    return 0
+  fi
+
+  local ingested=0
+  local review_id scope parent_task_id parent_task_uid reviewed_commit event_ts
+  review_id=$(echo "$review_event" | jq -r '.reviewId // ""' 2>/dev/null)
+  scope=$(echo "$review_event" | jq -r '.scope // "task"' 2>/dev/null)
+  parent_task_id=$(echo "$review_event" | jq -r '.parentTaskId // ""' 2>/dev/null)
+  parent_task_uid=$(echo "$review_event" | jq -r '.parentTaskUid // ""' 2>/dev/null)
+  reviewed_commit=$(echo "$review_event" | jq -r '.reviewedCommit // ""' 2>/dev/null)
+  event_ts=$(echo "$review_event" | jq -r '.ts // ""' 2>/dev/null)
+
+  local i=0
+  while [ "$i" -lt "$findings_count" ]; do
+    local finding finding_id key is_processed
+    finding=$(echo "$review_event" | jq -c --argjson idx "$i" '.findings[$idx]')
+    finding_id=$(echo "$finding" | jq -r '.id // ""' 2>/dev/null)
+    if [ -z "$finding_id" ] || [ -z "$review_id" ]; then
+      i=$((i + 1))
+      continue
+    fi
+
+    key="${review_id}:${finding_id}"
+    is_processed=$(jq -r --arg key "$key" '.quality.processedReviewKeys // [] | index($key) != null' "$prd_file" 2>/dev/null || echo "false")
+    if [ "$is_processed" = "true" ]; then
+      i=$((i + 1))
+      continue
+    fi
+
+    jq --arg key "$key" \
+       --arg review_id "$review_id" \
+       --arg finding_id "$finding_id" \
+       --arg scope "$scope" \
+       --arg parent_task_id "$parent_task_id" \
+       --arg parent_task_uid "$parent_task_uid" \
+       --arg reviewed_commit "$reviewed_commit" \
+       --arg issue_number "$issue_number" \
+       --arg event_ts "$event_ts" \
+       --argjson finding "$finding" \
+       '.quality.processedReviewKeys += [$key] |
+        .quality.findings += [{
+          "key": $key,
+          "reviewId": $review_id,
+          "findingId": $finding_id,
+          "issue": ($issue_number | tonumber),
+          "scope": $scope,
+          "parentTaskId": (if $parent_task_id == "" then null else $parent_task_id end),
+          "parentTaskUid": (if $parent_task_uid == "" then null else $parent_task_uid end),
+          "reviewedCommit": (if $reviewed_commit == "" then null else $reviewed_commit end),
+          "severity": ($finding.severity // "medium"),
+          "confidence": ($finding.confidence // 0),
+          "category": ($finding.category // "adherence"),
+          "title": ($finding.title // ""),
+          "description": ($finding.description // ""),
+          "evidence": ($finding.evidence // []),
+          "suggestedTask": ($finding.suggestedTask // null),
+          "status": "open",
+          "createdAt": (if $event_ts == "" then (now | todateiso8601) else $event_ts end),
+          "updatedAt": (if $event_ts == "" then (now | todateiso8601) else $event_ts end),
+          "enqueuedTaskIds": []
+        }]' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+    ingested=$((ingested + 1))
+    i=$((i + 1))
+  done
+
+  echo "$ingested"
+  return 0
+}
+
+# Build the list of review findings that are eligible for auto-enqueue.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#
+# Output: JSON array of finding objects
+build_enqueuable_review_tasks() {
+  local prd_file="${1:-prd.json}"
+  jq -c '
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    (.quality.reviewPolicy.minConfidenceForAutoEnqueue // 0.75) as $minConf |
+    [
+      (.quality.findings // [])[] |
+      select(.status == "open") |
+      select((.severity // "" | ascii_downcase) as $sev | any($autoSev[]; ascii_downcase == $sev)) |
+      select((.confidence // 0) >= $minConf) |
+      select(.suggestedTask != null and (.suggestedTask.title // "") != "")
+    ]
+  ' "$prd_file" 2>/dev/null || echo "[]"
+}
+
+# Mark findings as enqueued after corresponding tasks are inserted.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - JSON array of finding keys
+#   $3 - optional enqueued task id (single) to append
+mark_enqueued_findings() {
+  local prd_file="${1:-prd.json}"
+  local finding_keys_json="${2:-[]}"
+  local enqueued_task_id="${3:-}"
+
+  if [ -z "$finding_keys_json" ] || [ "$finding_keys_json" = "[]" ]; then
+    return 0
+  fi
+
+  jq --argjson keys "$finding_keys_json" --arg task_id "$enqueued_task_id" '
+    .quality.findings = ((.quality.findings // []) | map(
+      if (.key as $k | ($keys | index($k) != null)) then
+        .status = "enqueued" |
+        .updatedAt = (now | todateiso8601) |
+        .enqueuedTaskIds = (
+          if ($task_id == "") then (.enqueuedTaskIds // [])
+          else ((.enqueuedTaskIds // []) + [$task_id] | unique)
+          end
+        )
+      else . end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Reconcile enqueued findings against code_review tasks in prd.json.
+# If all mapped code_review tasks for a finding have passed, mark it resolved.
+reconcile_review_findings() {
+  local prd_file="${1:-prd.json}"
+  jq '
+    . as $root |
+    .quality.findings = ((.quality.findings // []) | map(
+      . as $finding |
+      if ($finding.status == "enqueued" or $finding.status == "open") and ($finding.key // "") != "" then
+        (
+          [
+            $root.userStories[]? |
+            select(.discoverySource == "code_review") |
+            select((.description // "") | contains("Review Finding Key: " + ($finding.key)))
+          ] as $tasks |
+          if ($tasks | length) == 0 then $finding
+          elif (any($tasks[]; .passes == true)) then $finding | .status = "resolved" | .updatedAt = (now | todateiso8601)
+          else $finding | .status = "enqueued"
+          end
+        )
+      else $finding end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Return count of open blocking findings (critical/high severities).
+count_open_blocking_review_findings() {
+  local prd_file="${1:-prd.json}"
+  jq -r '
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    [
+      (.quality.findings // [])[] |
+      select((.status // "open") == "open") |
+      select((.severity // "" | ascii_downcase) as $sev | any($autoSev[]; ascii_downcase == $sev))
+    ] | length
+  ' "$prd_file" 2>/dev/null || echo "0"
+}
+
+# Mark final review state in quality metadata.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - status: pending|running|passed|failed
+#   $3 - reviewed commit hash (optional)
+#   $4 - review id (optional)
+mark_final_review_status() {
+  local prd_file="${1:-prd.json}"
+  local status="$2"
+  local reviewed_commit="$3"
+  local review_id="$4"
+
+  jq --arg status "$status" --arg reviewed_commit "$reviewed_commit" --arg review_id "$review_id" '
+    .quality.finalReview.status = $status |
+    .quality.finalReview.reviewedCommit = (if $reviewed_commit == "" then null else $reviewed_commit end) |
+    .quality.finalReview.lastReviewId = (if $review_id == "" then .quality.finalReview.lastReviewId else $review_id end) |
+    .quality.finalReview.updatedAt = (now | todateiso8601)
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

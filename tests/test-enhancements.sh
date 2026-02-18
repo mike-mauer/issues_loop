@@ -195,6 +195,21 @@ result_multi=$(extract_json_events_from_issue_comments "$COMMENTS_MULTI")
 line_count=$(echo "$result_multi" | grep -c 'task_log' || true)
 assert_eq "$line_count" "2" "1e: Multiple events extracted from multiple task logs"
 
+# 1f. Review Event JSON extraction (separate parser)
+COMMENTS_REVIEW='## 🔎 Code Review: US-003
+
+### Summary
+High-signal review complete.
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":42,"reviewId":"rev_test_001","scope":"task","parentTaskId":"US-003","parentTaskUid":"tsk_a1b2c3d4e5f6","reviewedCommit":"abc1234","status":"completed","findings":[],"ts":"2026-02-16T18:30:00Z"}
+```'
+
+review_result=$(extract_review_events_from_issue_comments "$COMMENTS_REVIEW")
+assert_contains "$review_result" '"type":"review_log"' "1f: Extracts review_log event from Review Event JSON block"
+assert_contains "$review_result" '"reviewId":"rev_test_001"' "1f: reviewId extracted correctly"
+
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -268,6 +283,16 @@ enqueue_discovered_tasks "$TEST_DIR/prd-enqueue.json" "US-001" "tsk_parent00001"
 
 story_count_diff=$(jq '.userStories | length' "$TEST_DIR/prd-enqueue.json")
 assert_eq "$story_count_diff" "3" "2c: Different task accepted (3 stories total)"
+
+# 2f. Enqueue with custom discovery source
+DISCOVERED_REVIEW='[{"title":"Review finding task","description":"Address review finding","acceptanceCriteria":["Review risk mitigated"],"verifyCommands":["echo ok"],"dependsOn":[]}]'
+enqueue_discovered_tasks "$TEST_DIR/prd-enqueue.json" "US-001" "tsk_parent00001" 1 "$DISCOVERED_REVIEW" 99 "code_review"
+
+story_count_review=$(jq '.userStories | length' "$TEST_DIR/prd-enqueue.json")
+assert_eq "$story_count_review" "4" "2f: Review discovered task appended"
+
+review_source=$(jq -r '.userStories[3].discoverySource' "$TEST_DIR/prd-enqueue.json")
+assert_eq "$review_source" "code_review" "2f: discoverySource uses provided override"
 
 # 2d. Fingerprint computation is deterministic
 fp1=$(compute_task_fingerprint "Fix edge case" "Handle null input" "Test passes" "tsk_parent00001")
@@ -502,17 +527,30 @@ assert_eq "$df1" "null" "5g: discoveredFrom initialized to null for planned task
 ds1=$(jq '.userStories[0].discoverySource' "$TEST_DIR/prd-legacy.json")
 assert_eq "$ds1" "null" "5h: discoverySource initialized to null for planned tasks"
 
-# 5i. uid is deterministic (running again produces same uid)
+# 5i. quality review defaults initialized
+quality_mode=$(jq -r '.quality.reviewMode' "$TEST_DIR/prd-legacy.json")
+assert_eq "$quality_mode" "hybrid" "5i: quality.reviewMode initialized"
+
+quality_auto=$(jq -r '.quality.reviewPolicy.autoEnqueueSeverities | join(",")' "$TEST_DIR/prd-legacy.json")
+assert_eq "$quality_auto" "critical,high" "5i: autoEnqueueSeverities initialized"
+
+quality_threshold=$(jq -r '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$TEST_DIR/prd-legacy.json")
+assert_eq "$quality_threshold" "0.75" "5i: minConfidenceForAutoEnqueue initialized"
+
+quality_final_status=$(jq -r '.quality.finalReview.status' "$TEST_DIR/prd-legacy.json")
+assert_eq "$quality_final_status" "pending" "5i: finalReview status initialized"
+
+# 5j. uid is deterministic (running again produces same uid)
 uid1_before="$uid1"
 initialize_missing_prd_fields "$TEST_DIR/prd-legacy.json"
 uid1_after=$(jq -r '.userStories[0].uid' "$TEST_DIR/prd-legacy.json")
-assert_eq "$uid1_after" "$uid1_before" "5i: uid is stable on re-run (deterministic)"
+assert_eq "$uid1_after" "$uid1_before" "5j: uid is stable on re-run (deterministic)"
 
-# 5j. File remains valid JSON after initialization
+# 5k. File remains valid JSON after initialization
 if python3 -c "import json; json.load(open('$TEST_DIR/prd-legacy.json'))" 2>/dev/null; then
-  pass "5j: Initialized prd.json is valid JSON"
+  pass "5k: Initialized prd.json is valid JSON"
 else
-  fail "5j: Initialized prd.json is valid JSON" "valid JSON" "invalid JSON"
+  fail "5k: Initialized prd.json is valid JSON" "valid JSON" "invalid JSON"
 fi
 
 echo ""
@@ -660,6 +698,107 @@ exit_6h=$?
 set -e
 assert_eq "$exit_6h" "1" "6h: Returns exit 1 when gh api PATCH fails (not durably verified)"
 assert_eq "$result_6h" "" "6h: Returns no output when patch fails"
+
+# Reset gh mock to no-op
+gh() { :; }
+export -f gh
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 7: Review Finding Ingestion + Dedupe + Auto-Enqueue Selection
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 7: Review Findings Ingestion + Selection ──"
+
+cat > "$TEST_DIR/prd-review.json" << 'FIXTURE'
+{
+  "project": "test-review",
+  "issueNumber": 101,
+  "formula": "feature",
+  "compaction": {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 5},
+  "quality": {
+    "reviewMode": "hybrid",
+    "reviewPolicy": {
+      "autoEnqueueSeverities": ["critical", "high"],
+      "approvalRequiredSeverities": ["medium", "low"],
+      "minConfidenceForAutoEnqueue": 0.75,
+      "maxFindingsPerReview": 5
+    },
+    "findings": [],
+    "processedReviewKeys": [],
+    "finalReview": {"status": "pending", "reviewedCommit": null, "lastReviewId": null, "updatedAt": null}
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "uid": "tsk_parent_review",
+      "priority": 1,
+      "title": "Parent review task",
+      "description": "Parent for review findings",
+      "dependsOn": [],
+      "discoveredFrom": null,
+      "discoverySource": null,
+      "acceptanceCriteria": ["ok"],
+      "verifyCommands": ["echo ok"],
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": null
+    }
+  ]
+}
+FIXTURE
+
+REVIEW_EVENT='{"v":1,"type":"review_log","issue":101,"reviewId":"rev_demo_001","scope":"task","parentTaskId":"US-001","parentTaskUid":"tsk_parent_review","reviewedCommit":"abc999","status":"completed","findings":[{"id":"RF-001","severity":"high","confidence":0.9,"category":"production_readiness","title":"Timeout missing","description":"No timeout on external request.","evidence":[{"file":"src/client.ts","line":12}],"suggestedTask":{"title":"Add timeout","description":"Add timeout and error handling","acceptanceCriteria":["Timeout is enforced"],"verifyCommands":["echo ok"],"dependsOn":[]}},{"id":"RF-002","severity":"medium","confidence":0.8,"category":"efficiency","title":"Hot path alloc","description":"Repeated allocation in loop.","evidence":[{"file":"src/hot.ts","line":22}]}],"ts":"2026-02-16T12:00:00Z"}'
+
+ingested_first=$(ingest_review_findings_into_prd "$TEST_DIR/prd-review.json" "$REVIEW_EVENT" 101)
+assert_eq "$ingested_first" "2" "7a: Ingests two new findings from review event"
+
+ingested_second=$(ingest_review_findings_into_prd "$TEST_DIR/prd-review.json" "$REVIEW_EVENT" 101)
+assert_eq "$ingested_second" "0" "7b: Duplicate review event findings are skipped"
+
+processed_keys_count=$(jq '.quality.processedReviewKeys | length' "$TEST_DIR/prd-review.json")
+assert_eq "$processed_keys_count" "2" "7c: processedReviewKeys tracks unique finding keys"
+
+enqueuable=$(build_enqueuable_review_tasks "$TEST_DIR/prd-review.json")
+enqueuable_count=$(echo "$enqueuable" | jq 'length')
+assert_eq "$enqueuable_count" "1" "7d: Only high/critical findings above threshold are auto-enqueue candidates"
+
+enq_key=$(echo "$enqueuable" | jq -r '.[0].key')
+mark_enqueued_findings "$TEST_DIR/prd-review.json" "$(jq -nc --arg k "$enq_key" '[$k]')"
+
+enq_status=$(jq -r --arg k "$enq_key" '.quality.findings[] | select(.key == $k) | .status' "$TEST_DIR/prd-review.json")
+assert_eq "$enq_status" "enqueued" "7e: mark_enqueued_findings updates status to enqueued"
+
+blocking_open_count=$(count_open_blocking_review_findings "$TEST_DIR/prd-review.json")
+assert_eq "$blocking_open_count" "0" "7f: Enqueued high finding is no longer counted as open blocker"
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 8: Final Review Status + Review Verification
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 8: Final Review Status + Verification ──"
+
+mark_final_review_status "$TEST_DIR/prd-review.json" "running" "abc999" "rev_demo_001"
+final_status=$(jq -r '.quality.finalReview.status' "$TEST_DIR/prd-review.json")
+assert_eq "$final_status" "running" "8a: mark_final_review_status sets status"
+
+final_commit=$(jq -r '.quality.finalReview.reviewedCommit' "$TEST_DIR/prd-review.json")
+assert_eq "$final_commit" "abc999" "8a: mark_final_review_status sets reviewedCommit"
+
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/101#issuecomment-9991","body":"## 🔎 Code Review: FINAL\n\n### Summary\nLooks good.\n\n### Review Event JSON\n```json\n{\"v\":1,\"type\":\"review_log\",\"issue\":101,\"reviewId\":\"rev_final_001\",\"scope\":\"final\",\"parentTaskId\":\"FINAL\",\"parentTaskUid\":\"final_review\",\"reviewedCommit\":\"abc999\",\"status\":\"completed\",\"findings\":[],\"ts\":\"2026-02-16T12:45:00Z\"}\n```\n\n<review_result>CLEAR</review_result>"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+verified_final=$(verify_review_log_on_github 101 "FINAL" "abc999")
+assert_contains "$verified_final" '"reviewId":"rev_final_001"' "8b: verify_review_log_on_github finds matching FINAL review"
+assert_contains "$verified_final" '"reviewedCommit":"abc999"' "8b: verify_review_log_on_github validates reviewedCommit"
 
 # Reset gh mock to no-op
 gh() { :; }

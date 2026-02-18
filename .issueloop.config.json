@@ -20,6 +20,8 @@
     "plan": "## 📋 Implementation Plan",
     "approved": "## ✅ Plan Approved",
     "taskLog": "## 📝 Task Log:",
+    "codeReview": "## 🔎 Code Review:",
+    "reviewApproval": "## 🧾 Review Approval Needed",
     "discovery": "## 🔍 Discovery Note",
     "patterns": "## 🔍 Codebase Patterns",
     "testingCheckpoint": "## 🧪 Testing Checkpoint",
@@ -33,6 +35,19 @@
   "taskLogJsonVersion": 1,
   "summaryEveryNTaskLogs": 5,
   "wispDefaultTtlMinutes": 90,
+  "review": {
+    "enabled": true,
+    "autoEnqueueSeverities": [
+      "critical",
+      "high"
+    ],
+    "approvalRequiredSeverities": [
+      "medium",
+      "low"
+    ],
+    "minConfidenceForAutoEnqueue": 0.75,
+    "maxFindingsPerReview": 5
+  },
   "commitPrefixes": {
     "task": "feat",
     "state": "chore",

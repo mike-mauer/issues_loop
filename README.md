@@ -381,6 +381,32 @@ Wisps are **short-lived** context hints posted as `## 🪶 Wisp` comments on the
 
 Default TTL is 90 minutes (configurable via `wispDefaultTtlMinutes` in `.issueloop.config.json`).
 
+## 🔎 Hybrid Review Lane (Findings-Only)
+
+The loop runs a parallel code-review lane designed to improve quality without slowing implementation throughput.
+
+### Lifecycle
+1. A task passes and its task log is verified on GitHub.
+2. The loop spawns a **read-only** review agent for that task commit.
+3. Reviewer posts `## 🔎 Code Review: <scope>` with `### Review Event JSON`.
+4. Orchestrator ingests review events and deduplicates findings by `reviewId:findingId`.
+5. High-severity findings auto-enqueue follow-up tasks in `prd.json`.
+
+### Review Event Schema
+```json
+{"v":1,"type":"review_log","issue":42,"reviewId":"rev_20260216_us003","scope":"task","parentTaskId":"US-003","parentTaskUid":"tsk_a1b2c3d4e5f6","reviewedCommit":"abc1234","status":"completed","findings":[{"id":"RF-001","severity":"high","confidence":0.91,"category":"production_readiness","title":"Missing timeout on external call","description":"External call has no timeout and can stall request workers under partial outage.","evidence":[{"file":"src/api/client.ts","line":42}],"suggestedTask":{"title":"Add bounded timeout + retry guard to API client","description":"Add timeout and bounded retry behavior.","acceptanceCriteria":["Client enforces timeout <= 3s","Timeout path returns handled error"],"verifyCommands":["npm run test -- api-client","npm run typecheck"],"dependsOn":[]}}],"ts":"2026-02-16T20:10:00Z"}
+```
+
+### Severity Routing
+- **Auto-enqueue:** `critical`, `high` findings with confidence ≥ configured threshold.
+- **Approval path:** `medium`, `low` findings remain open until approved.
+- Review-generated tasks are tagged with `discoverySource: "code_review"`.
+
+### Final Review Gate
+- When all implementation tasks pass, the loop runs a consolidated `FINAL` review over `main..HEAD`.
+- Testing checkpoint is blocked while open blocking findings remain.
+- If blocking findings exist, the loop labels issue `AI: Review` and continues with generated follow-up tasks.
+
 ## 🧪 Testing Checkpoint
 
 After all tasks pass automated verification, the workflow enters a **Testing Checkpoint** before closing. This ensures human verification of the implementation.
