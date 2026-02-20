@@ -247,6 +247,7 @@ This workflow uses the **Ralph Loop** pattern for autonomous implementation. Mem
 | `## 🔍 Discovery Note` | Patterns/learnings for future iterations |
 | `## 🧾 Compacted Summary` | Periodic summary of recent task logs (every 5) |
 | `## 🪶 Wisp` | Ephemeral context hint with expiration |
+| `## 🌐 Browser Verification: US-XXX` | Browser verification evidence for UI tasks |
 | `## 🔁 Replan Checkpoint` | Retry-stall checkpoint requesting quick re-plan |
 | `## 🧪 Testing Checkpoint` | Request user testing |
 | `## 🔧 Debug Session` | Debug attempt |
@@ -266,6 +267,9 @@ After plan approval, `prd.json` tracks testable task state:
     "taskLogCountSinceLastSummary": 0,
     "summaryEveryNTaskLogs": 5
   },
+  "memory": {
+    "patterns": []
+  },
   "userStories": [
     {
       "id": "US-001",
@@ -273,6 +277,7 @@ After plan approval, `prd.json` tracks testable task state:
       "title": "Create user model",
       "discoveredFrom": null,
       "discoverySource": null,
+      "requiresBrowserVerification": false,
       "acceptanceCriteria": ["Migration creates users table", "npm run typecheck passes"],
       "verifyCommands": ["npm run db:migrate", "npm run typecheck"],
       "passes": false,
@@ -320,7 +325,7 @@ Every `## 📝 Task Log` comment includes a machine-readable `### Event JSON` se
 ````markdown
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"patterns":[{"statement":"When changing X, also update Y","scope":"src/module","files":["src/module/a.ts"],"confidence":0.9}],"discovered":[],"ts":"2026-02-10T18:30:00Z"}
 ```
 ````
 
@@ -329,6 +334,12 @@ The loop parser uses a **two-phase extraction strategy**:
 2. **Legacy markdown fallback:** If no Event JSON block is found, fall back to parsing the human-readable markdown sections (`**Status:**`, `**Attempt:**`, etc.).
 
 This ensures backward compatibility with task logs written before the JSON event format was introduced.
+
+For UI-required tasks, add a browser verification comment with `### Browser Event JSON`:
+
+```json
+{"v":1,"type":"browser_verification","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","tool":"playwright","status":"passed","artifacts":["screenshot:/abs/path.png"],"ts":"2026-02-20T12:00:00Z"}
+```
 
 ## 🔍 Discovered-Task Auto-Enqueue
 
@@ -346,35 +357,50 @@ During implementation, tasks may discover additional work needed. These **discov
 
 Duplicate discovered tasks (matching fingerprint) are silently skipped and noted in the task log.
 
-## 🛡️ Execution Hardening (Warn → Enforce)
+## 🛡️ Execution Hardening (Enforce by Default)
 
 The loop now computes canonical task outcome in the orchestrator:
 
 1. `verifyCommands` are re-run authoritatively by the loop runner.
 2. `maxTaskAttempts` is enforced when selecting executable tasks.
-3. Search evidence from Event JSON (`search.queries`) is validated.
-4. Added code lines are scanned for placeholder patterns.
-5. Stale retry patterns trigger a replan checkpoint (`debugState.status = "replan_required"`).
+3. Verified task log Event JSON evidence is required.
+4. Search evidence from Event JSON (`search.queries`) is validated.
+5. Added code lines are scanned for placeholder patterns.
+6. UI tasks require browser verification evidence.
+7. Stale retry patterns trigger a replan checkpoint (`debugState.status = "replan_required"`).
 
 `execution.gateMode` in `.issueloop.config.json` controls guard behavior:
 
-- `warn` (default): guard violations are logged, task can still pass if verify passes.
-- `enforce`: guard violations fail the task.
+- `enforce` (default): guard violations fail the task.
+- `warn`: guard violations are logged, task can still pass if verify passes.
+
+Browser verification can hard-fail regardless of `gateMode` when `execution.browserVerification.hardFailWhenUnavailable` is true.
 
 Key execution config (defaults):
 
 ```json
 {
   "execution": {
-    "gateMode": "warn",
+    "gateMode": "enforce",
+    "eventEvidence": {"required": true},
     "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80},
     "searchEvidence": {"required": true, "minQueries": 2},
+    "browserVerification": {"requiredForUiTasks": true, "hardFailWhenUnavailable": true, "allowedTools": ["playwright", "dev-browser"]},
     "placeholder": {"enabled": true},
     "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 2, "consecutiveRetryThreshold": 4},
     "context": {"preferCompactedSummary": true, "maxTaskLogs": 8, "maxDiscoveryNotes": 6, "maxReviewLogs": 4}
   }
 }
 ```
+
+## 📚 Pattern Memory Auto-Sync
+
+When task Event JSON includes `patterns`, the loop:
+1. Deduplicates and stores them in `prd.json.memory.patterns`
+2. Auto-syncs high-confidence patterns into nearby existing `AGENTS.md` / `CLAUDE.md`
+3. Writes to managed markers:
+   - `<!-- issues-loop:auto-patterns:start -->`
+   - `<!-- issues-loop:auto-patterns:end -->`
 
 ## 🧾 Compaction Summaries
 

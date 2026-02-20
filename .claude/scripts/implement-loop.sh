@@ -46,7 +46,8 @@ REVIEW_MAX_FINDINGS=5
 MAX_TASK_ATTEMPTS=3
 
 # Execution hardening defaults (overridden by load_execution_config)
-EXEC_GATE_MODE="warn"
+EXEC_GATE_MODE="enforce"
+EXEC_EVENT_REQUIRED="true"
 EXEC_VERIFY_TIMEOUT_SECONDS=600
 EXEC_VERIFY_MAX_OUTPUT_LINES=80
 EXEC_VERIFY_GLOBAL_COMMANDS_JSON='[]'
@@ -54,6 +55,9 @@ EXEC_VERIFY_SECURITY_COMMANDS_JSON='[]'
 EXEC_VERIFY_RUN_SECURITY_EACH="false"
 EXEC_SEARCH_REQUIRED="true"
 EXEC_SEARCH_MIN_QUERIES=2
+EXEC_BROWSER_REQUIRED_FOR_UI="true"
+EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE="true"
+EXEC_BROWSER_ALLOWED_TOOLS_JSON='["playwright","dev-browser"]'
 EXEC_PLACEHOLDER_ENABLED="true"
 EXEC_PLACEHOLDER_PATTERNS_JSON='[]'
 EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON='[]'
@@ -65,6 +69,11 @@ EXEC_CONTEXT_MAX_TASK_LOGS=8
 EXEC_CONTEXT_MAX_DISCOVERY_NOTES=6
 EXEC_CONTEXT_MAX_REVIEW_LOGS=4
 EXEC_LABEL_PLANNING="AI: Planning"
+MEMORY_AUTO_SYNC_DOCS="true"
+MEMORY_MIN_CONFIDENCE="0.8"
+MEMORY_DOC_TARGETS_JSON='["AGENTS.md","CLAUDE.md"]'
+MEMORY_MAX_PATTERNS_PER_TASK=3
+MEMORY_MANAGED_SECTION_MARKER="issues-loop:auto-patterns"
 
 # Logging function
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
@@ -74,6 +83,30 @@ commit_prd_if_changed() {
   local message="$1"
   if ! git diff --quiet -- "$PRD_FILE" || ! git diff --cached --quiet -- "$PRD_FILE"; then
     git add "$PRD_FILE"
+    git commit -m "$message" 2>/dev/null || true
+  fi
+}
+
+# Commit pattern sync changes only for prd.json and synced docs.
+commit_pattern_sync_if_changed() {
+  local message="$1"
+  local docs_json="${2:-[]}"
+  local changed=0
+
+  if ! git diff --quiet -- "$PRD_FILE" || ! git diff --cached --quiet -- "$PRD_FILE"; then
+    git add "$PRD_FILE"
+    changed=1
+  fi
+
+  while IFS= read -r doc_path; do
+    [ -z "$doc_path" ] && continue
+    if [ -f "$doc_path" ] && (! git diff --quiet -- "$doc_path" || ! git diff --cached --quiet -- "$doc_path"); then
+      git add "$doc_path"
+      changed=1
+    fi
+  done < <(echo "$docs_json" | jq -r '.[]?' 2>/dev/null || true)
+
+  if [ "$changed" -eq 1 ]; then
     git commit -m "$message" 2>/dev/null || true
   fi
 }
@@ -313,7 +346,13 @@ fi
 # Load execution + review policy defaults
 load_execution_config "$CONFIG_FILE"
 if [ -f "$CONFIG_FILE" ]; then
-  REVIEW_ENABLED=$(jq -r '.review.enabled // true' "$CONFIG_FILE" 2>/dev/null || echo "true")
+  REVIEW_ENABLED=$(jq -r '
+    if (.review? | type) == "object" and (.review | has("enabled")) then
+      (.review.enabled | tostring)
+    else
+      "true"
+    end
+  ' "$CONFIG_FILE" 2>/dev/null || echo "true")
   REVIEW_MAX_FINDINGS=$(jq -r '.review.maxFindingsPerReview // 5' "$CONFIG_FILE" 2>/dev/null || echo "5")
 fi
 
@@ -489,6 +528,23 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
   # 1. Get full task details from prd.json
   TASK_JSON=$(jq --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id)' "$PRD_FILE")
+  TASK_BROWSER_REQUIRED=$(task_requires_browser_verification "$TASK_JSON" "$EXEC_BROWSER_REQUIRED_FOR_UI")
+  BROWSER_ALLOWED_TOOLS=$(echo "$EXEC_BROWSER_ALLOWED_TOOLS_JSON" | jq -r 'join(", ")' 2>/dev/null || echo "playwright, dev-browser")
+  BROWSER_PROMPT=""
+  if [ "$TASK_BROWSER_REQUIRED" = "true" ]; then
+    BROWSER_PROMPT="
+=== REQUIRED BROWSER VERIFICATION ===
+This task requires browser verification.
+1. Verify the changed UX in browser using one of: ${BROWSER_ALLOWED_TOOLS}
+2. Post a dedicated comment to issue #$ISSUE_NUMBER:
+   Header: ## 🌐 Browser Verification: $NEXT_TASK
+3. Include Browser Event JSON exactly as:
+### Browser Event JSON
+\`\`\`json
+{\"v\":1,\"type\":\"browser_verification\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"tool\":\"playwright\",\"status\":\"passed\",\"artifacts\":[\"screenshot:/abs/path.png\"],\"ts\":\"<ISO 8601>\"}
+\`\`\`
+"
+  fi
 
   # 2. Get recent git commits (last 10)
   GIT_LOG=$(git log --oneline -10 2>/dev/null || echo "No git history available")
@@ -545,6 +601,7 @@ ${ACTIVE_WISPS:-No active wisps}
 7. Stage and commit implementation changes when appropriate (do not mutate prd.json pass/fail state)
 8. Post a task log comment to GitHub issue #$ISSUE_NUMBER using: gh issue comment $ISSUE_NUMBER --body \"...\"
 9. Include Event JSON with taskUid=$TASK_UID and a search evidence block
+$BROWSER_PROMPT
 
 CRITICAL:
 - Do NOT set task pass/fail in prd.json. The orchestrator updates attempts/passes authoritatively.
@@ -559,13 +616,14 @@ the end of the task log comment. Format:
 \`\`\`
 ### Event JSON
 \\\`\\\`\\\`json
-{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"search\":{\"queries\":[\"rg -n \\\"pattern\\\" src\"],\"filesInspected\":[\"path/to/file\"]},\"discovered\":[],\"ts\":\"<ISO 8601>\"}
+{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"search\":{\"queries\":[\"rg -n \\\"pattern\\\" src\"],\"filesInspected\":[\"path/to/file\"]},\"patterns\":[{\"statement\":\"When changing X, also update Y\",\"scope\":\"src/module\",\"files\":[\"src/module/a.ts\"],\"confidence\":0.9}],\"discovered\":[],\"ts\":\"<ISO 8601>\"}
 \\\`\\\`\\\`
 \`\`\`
 
 The 'discovered' array should contain any new tasks found during implementation
 (empty array if none). Each discovered task object needs: title, description,
 acceptanceCriteria, verifyCommands, and dependsOn.
+The 'patterns' array is optional but recommended for reusable insights.
 
 Output guidance:
 - End your response with one advisory tag: <result>PASS</result>, <result>RETRY</result>, or <result>BLOCKED</result>.
@@ -601,6 +659,8 @@ Output guidance:
   # ─── Post-task orchestration: verify task log, run gates, and update state ───
   PARSED_EVENT=$(verify_task_log_on_github "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" 2>/dev/null || echo "")
   EVENT_VERIFIED=0
+  PATTERN_SYNC_DOCS='[]'
+  PATTERN_SYNC_CHANGED="false"
   if [ -n "$PARSED_EVENT" ] && [ "$PARSED_EVENT" != "null" ]; then
     EVENT_VERIFIED=1
 
@@ -609,6 +669,29 @@ Output guidance:
       log "Discovered tasks found, enqueuing..."
       enqueue_discovered_tasks "$PRD_FILE" "$NEXT_TASK" "$TASK_UID" "$TASK_PRIORITY" "$DISCOVERED_JSON" "$ISSUE_NUMBER"
       log "$ICON_SUCCESS Discovered tasks enqueued"
+    fi
+
+    NEW_PATTERNS_JSON=$(ingest_task_patterns_into_prd "$PRD_FILE" "$PARSED_EVENT" "$ISSUE_NUMBER" "$MEMORY_MAX_PATTERNS_PER_TASK")
+    if [ -n "$NEW_PATTERNS_JSON" ] && [ "$NEW_PATTERNS_JSON" != "[]" ] && [ "$NEW_PATTERNS_JSON" != "null" ]; then
+      SYNC_RESULT=$(sync_task_patterns_to_docs \
+        "$PRD_FILE" \
+        "$ISSUE_NUMBER" \
+        "$NEXT_TASK" \
+        "$TASK_UID" \
+        "$(echo "$PARSED_EVENT" | jq -r '.commit // ""' 2>/dev/null)" \
+        "$NEW_PATTERNS_JSON" \
+        "$MEMORY_AUTO_SYNC_DOCS" \
+        "$MEMORY_MIN_CONFIDENCE" \
+        "$MEMORY_DOC_TARGETS_JSON" \
+        "$MEMORY_MANAGED_SECTION_MARKER")
+      PATTERN_SYNC_CHANGED=$(echo "$SYNC_RESULT" | jq -r '.docsChanged // false' 2>/dev/null || echo "false")
+      PATTERN_SYNC_DOCS=$(echo "$SYNC_RESULT" | jq -c '.syncedDocs // []' 2>/dev/null || echo "[]")
+      if [ "$PATTERN_SYNC_CHANGED" = "true" ]; then
+        log "$ICON_SUCCESS Synced pattern memory to docs."
+        commit_pattern_sync_if_changed "chore: sync pattern memory for $NEXT_TASK (#$ISSUE_NUMBER)" "$PATTERN_SYNC_DOCS"
+      else
+        commit_prd_if_changed "chore: ingest pattern memory for $NEXT_TASK (#$ISSUE_NUMBER)"
+      fi
     fi
   else
     log "$ICON_WARN Task log not found on GitHub — comment may have failed to post."
@@ -629,6 +712,20 @@ Output guidance:
     log "$ICON_WARN Authoritative verification reported $VERIFY_FAILED_COUNT failing command(s)."
   fi
 
+  EVENT_OK="true"
+  if [ "$(echo "$EXEC_EVENT_REQUIRED" | tr '[:upper:]' '[:lower:]')" = "true" ] && [ "$EVENT_VERIFIED" -ne 1 ]; then
+    EVENT_OK="false"
+  fi
+
+  BROWSER_EVENT_JSON=""
+  BROWSER_OK="true"
+  if [ "$TASK_BROWSER_REQUIRED" = "true" ]; then
+    BROWSER_EVENT_JSON=$(verify_browser_verification_on_github "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$EXEC_BROWSER_ALLOWED_TOOLS_JSON" 2>/dev/null || echo "")
+    if [ -z "$BROWSER_EVENT_JSON" ] || [ "$BROWSER_EVENT_JSON" = "null" ]; then
+      BROWSER_OK="false"
+    fi
+  fi
+
   SEARCH_CHECK=$(validate_search_evidence "$PARSED_EVENT" "$EXEC_SEARCH_MIN_QUERIES" "$EXEC_SEARCH_REQUIRED")
   SEARCH_OK=$(echo "$SEARCH_CHECK" | jq -r '.ok // false' 2>/dev/null || echo "false")
   SEARCH_REASON=$(echo "$SEARCH_CHECK" | jq -r '.reason // ""' 2>/dev/null || echo "")
@@ -645,6 +742,14 @@ Output guidance:
   fi
 
   GUARD_FAIL_COUNT=0
+  if [ "$EVENT_OK" != "true" ]; then
+    GUARD_FAIL_COUNT=$((GUARD_FAIL_COUNT + 1))
+    if [ "$(echo "$EXEC_GATE_MODE" | tr '[:upper:]' '[:lower:]')" = "enforce" ]; then
+      log "$ICON_WARN Event evidence gate failed: missing verified task log event on GitHub."
+    else
+      log "$ICON_WARN Event evidence advisory: missing verified task log event on GitHub."
+    fi
+  fi
   if [ "$SEARCH_OK" != "true" ]; then
     GUARD_FAIL_COUNT=$((GUARD_FAIL_COUNT + 1))
     if [ "$(echo "$EXEC_GATE_MODE" | tr '[:upper:]' '[:lower:]')" = "enforce" ]; then
@@ -661,9 +766,22 @@ Output guidance:
       log "$ICON_WARN Placeholder advisory: $PLACEHOLDER_COUNT risky addition(s) detected."
     fi
   fi
+  if [ "$TASK_BROWSER_REQUIRED" = "true" ] && [ "$BROWSER_OK" != "true" ]; then
+    GUARD_FAIL_COUNT=$((GUARD_FAIL_COUNT + 1))
+    if [ "$(echo "$EXEC_GATE_MODE" | tr '[:upper:]' '[:lower:]')" = "enforce" ]; then
+      log "$ICON_WARN Browser verification gate failed: missing valid browser verification event."
+    else
+      log "$ICON_WARN Browser verification advisory: missing valid browser verification event."
+    fi
+  fi
 
   CANONICAL_PASS="$VERIFY_PASSED"
   if [ "$(echo "$EXEC_GATE_MODE" | tr '[:upper:]' '[:lower:]')" = "enforce" ] && [ "$GUARD_FAIL_COUNT" -gt 0 ]; then
+    CANONICAL_PASS="false"
+  fi
+  if [ "$TASK_BROWSER_REQUIRED" = "true" ] &&
+     [ "$(echo "$EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE" | tr '[:upper:]' '[:lower:]')" = "true" ] &&
+     [ "$BROWSER_OK" != "true" ]; then
     CANONICAL_PASS="false"
   fi
 

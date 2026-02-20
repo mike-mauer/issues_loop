@@ -39,6 +39,17 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+  if rg -q "$pattern" "$file"; then
+    fail "$label"
+  else
+    pass "$label"
+  fi
+}
+
 assert_equal() {
   local a="$1"
   local b="$2"
@@ -78,6 +89,10 @@ for fn in \
   update_task_state_authoritative \
   is_task_exhausted \
   validate_search_evidence \
+  task_requires_browser_verification \
+  verify_browser_verification_on_github \
+  ingest_task_patterns_into_prd \
+  sync_task_patterns_to_docs \
   scan_placeholder_patterns \
   build_issue_context_bundle \
   update_execution_retry_counters \
@@ -90,6 +105,12 @@ done
 echo ""
 echo "── Required Loop Control Paths ──"
 for pattern in \
+  "EXEC_EVENT_REQUIRED" \
+  "EXEC_BROWSER_REQUIRED_FOR_UI" \
+  "verify_browser_verification_on_github" \
+  "ingest_task_patterns_into_prd" \
+  "sync_task_patterns_to_docs" \
+  "Browser Event JSON" \
   "run_verify_suite" \
   "validate_search_evidence" \
   "scan_placeholder_patterns" \
@@ -100,6 +121,13 @@ for pattern in \
   assert_contains "$CLAUDE_LOOP" "$pattern" "Claude loop contains $pattern flow"
   assert_contains "$SKILL_LOOP" "$pattern" "Skill loop contains $pattern flow"
 done
+
+echo ""
+echo "── Review Config Regression ──"
+assert_contains "$CLAUDE_LOOP" 'has\("enabled"\)' "Claude loop preserves explicit review.enabled=false"
+assert_contains "$SKILL_LOOP" 'has\("enabled"\)' "Skill loop preserves explicit review.enabled=false"
+assert_not_contains "$CLAUDE_LOOP" 'review\.enabled // true' "Claude loop does not use jq // fallback for review.enabled"
+assert_not_contains "$SKILL_LOOP" 'review\.enabled // true' "Skill loop does not use jq // fallback for review.enabled"
 
 echo ""
 echo "── Function Name Parity ──"

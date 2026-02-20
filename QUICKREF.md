@@ -64,6 +64,7 @@ Use `--quick` to skip scoping for issues already in progress.
 | `## 🔍 Discovery Note` | Learnings for future tasks |
 | `## 🧾 Compacted Summary` | Periodic context summary |
 | `## 🪶 Wisp` | Ephemeral context hint |
+| `## 🌐 Browser Verification: US-XXX` | Browser verification evidence for UI tasks |
 | `## 🔁 Replan Checkpoint` | Retry-stall checkpoint |
 | `## 🧪 Testing Checkpoint` | Request user testing |
 | `## 🔧 Debug Session` | Debug attempt |
@@ -77,9 +78,11 @@ Use `--quick` to skip scoping for issues already in progress.
 {
   "issueNumber": 42,
   "branchName": "ai/issue-42-feature",
+  "memory": {"patterns": []},
   "userStories": [{
     "id": "US-001",
     "title": "Create user schema",
+    "requiresBrowserVerification": false,
     "acceptanceCriteria": ["npm run typecheck passes"],
     "verifyCommands": ["npm run typecheck"],
     "passes": false,
@@ -121,11 +124,16 @@ Later? → Pause, resume with /implement
 
 - Task pass/fail is computed by orchestrator verify, not model `<result>` tags.
 - `maxTaskAttempts` is enforced from `.issueloop.config.json`.
+- Verified task log Event JSON evidence is required by default.
 - Event JSON should include `search.queries` evidence.
+- Event JSON may include `patterns` for durable memory sync.
 - Placeholder patterns in added lines are scanned each iteration.
+- UI tasks require browser verification event evidence.
 - `execution.gateMode`:
-  - `warn` (default): log violations, continue if verify passes.
-  - `enforce`: violations fail the task.
+  - `enforce` (default): violations fail the task.
+  - `warn`: log violations, continue if verify passes.
+- Browser event schema (for required UI tasks):
+  - `{"v":1,"type":"browser_verification","issue":42,"taskId":"US-003","taskUid":"tsk_...","tool":"playwright","status":"passed","artifacts":["screenshot:/abs/path.png"],"ts":"<ISO 8601>"}`
 - Repeated retries trigger `debugState.status = "replan_required"` and a `## 🔁 Replan Checkpoint` issue comment.
 
 ## 🧠 Fresh Context Rule

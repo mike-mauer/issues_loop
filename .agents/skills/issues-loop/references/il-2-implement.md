@@ -26,12 +26,14 @@ The loop now computes canonical outcome in the orchestrator:
 
 1. `verifyCommands` are executed by the loop runner (not trusted from model self-report).
 2. `maxTaskAttempts` is enforced when selecting executable tasks.
-3. Event JSON search evidence is validated (`search.queries`, configurable minimum).
-4. Added lines are scanned for placeholder patterns.
-5. `execution.gateMode` controls guard behavior:
-   - `warn` (default): guard violations are logged, task can still pass if verify passes.
-   - `enforce`: guard violations fail the task.
-6. Repeated retries trigger a stale-plan checkpoint (`debugState.status = "replan_required"`).
+3. Event evidence is required: a verified task log Event JSON must exist on GitHub.
+4. Event JSON search evidence is validated (`search.queries`, configurable minimum).
+5. Added lines are scanned for placeholder patterns.
+6. Browser verification is required for UI tasks and hard-fails if missing.
+7. `execution.gateMode` controls guard behavior:
+   - `enforce` (default): guard violations fail the task.
+   - `warn`: guard violations are logged, task can still pass if verify passes.
+8. Repeated retries trigger a stale-plan checkpoint (`debugState.status = "replan_required"`).
 
 ## Usage
 ```
@@ -92,9 +94,33 @@ Every task log comment **must** include an `### Event JSON` section containing a
 ```
 ```
 
-**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `search` (optional object with `queries` + `filesInspected`), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
+Optional reusable pattern memory can be included:
+```json
+"patterns":[{"statement":"When changing X, also update Y","scope":"src/module","files":["src/module/a.ts"],"confidence":0.9}]
+```
+
+**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `search` (optional object with `queries` + `filesInspected`), `patterns` (optional reusable pattern array), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
 
 **Parser rule:** The loop extracts **only** fenced json blocks under `### Event JSON` headings. All other JSON in comments is ignored. If no Event JSON block is found, the loop falls back to legacy markdown parsing for backward compatibility.
+
+### Browser Verification Event (Required for UI Tasks)
+
+For tasks that require browser verification, post an additional comment:
+
+```markdown
+## 🌐 Browser Verification: US-003
+
+### Browser Event JSON
+```json
+{"v":1,"type":"browser_verification","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","tool":"playwright","status":"passed","artifacts":["screenshot:/abs/path.png"],"ts":"2026-02-20T12:00:00Z"}
+```
+```
+
+Rules:
+- `type` must be `browser_verification`
+- `taskId` + `taskUid` must match the task log event
+- `status` must be `passed`
+- `tool` must be in configured allow-list (`playwright`, `dev-browser` by default)
 
 ### Discovered-Task Output for Auto-Enqueue
 
@@ -621,52 +647,16 @@ JWT error handling in this codebase:
 US-004 (registration) and US-005 (login) should follow this pattern.
 ```
 
-### Step 9b: Update Codebase Patterns (if discovery note posted)
+### Step 9b: Pattern Memory Auto-Sync
 
-When you post a Discovery Note, also update the consolidated patterns comment for quick reference:
+When Event JSON includes `patterns`, the loop:
+- Ingests patterns into `prd.json.memory.patterns` (deduped by `statement + scope`)
+- Auto-syncs high-confidence patterns into nearby existing `AGENTS.md` / `CLAUDE.md`
+- Writes into managed markers:
+  - `<!-- issues-loop:auto-patterns:start -->`
+  - `<!-- issues-loop:auto-patterns:end -->`
 
-```bash
-# Check if patterns comment exists
-PATTERNS_COMMENT=$(gh issue view $ISSUE_NUMBER --json comments --jq \
-  '.comments[] | select(.body | startswith("## 🔍 Codebase Patterns"))')
-
-if [ -z "$PATTERNS_COMMENT" ]; then
-  # Create new patterns comment (conceptually pinned at top)
-  gh issue comment $ISSUE_NUMBER --body "## 🔍 Codebase Patterns
-
-This section consolidates learnings discovered during implementation for quick reference.
-
-### Patterns
-- [Pattern from current discovery]
-
-### Gotchas
-- [Gotcha from current discovery]
-
-### Files for Reference
-- [Relevant file]: [Brief description]
-
----
-*Updated: $(date)*"
-else
-  # Post pattern update note (gh doesn't support editing)
-  gh issue comment $ISSUE_NUMBER --body "## 📝 Pattern Update
-
-Added to Codebase Patterns:
-- [New pattern discovered]
-
-See earlier '🔍 Codebase Patterns' comment for consolidated list."
-fi
-```
-
-### Step 9c: Consider Creating AGENTS.md
-
-If you discovered 2+ patterns in a specific directory, suggest creating an AGENTS.md file:
-
-```
-Consider creating `{directory}/AGENTS.md` with these patterns for future reference.
-```
-
-This provides directory-specific context for future AI iterations.
+No manual pattern comment maintenance is required.
 
 ---
 

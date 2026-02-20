@@ -67,6 +67,7 @@ command
 | `**Depends On:**` | Yes | Task IDs that must pass first, or "None" |
 | `discoveredFrom` | Auto | `null` for planned tasks; parent `uid` for discovered tasks |
 | `discoverySource` | Auto | `null` for planned; `"task_log"`, `"wisp_promotion"`, etc. for discovered |
+| `requiresBrowserVerification` | Optional | `true` for UI tasks that must post browser verification evidence |
 | `**Description:**` | Yes | What to implement (2-3 sentences) |
 | `**Acceptance Criteria:**` | Yes | Testable checkboxes |
 | `**Verify Commands:**` | Yes | Bash commands to prove success |
@@ -99,6 +100,7 @@ command
 | `**Depends On:** ...` | `userStories[].dependsOn` |
 | `null` for planned; parent uid for discovered | `userStories[].discoveredFrom` |
 | `null` for planned; source type for discovered | `userStories[].discoverySource` |
+| Optional UI gate flag | `userStories[].requiresBrowserVerification` |
 | `**Description:**` block | `userStories[].description` |
 | `**Acceptance Criteria:**` list | `userStories[].acceptanceCriteria` |
 | `**Verify Commands:**` code block | `userStories[].verifyCommands` |
@@ -175,8 +177,13 @@ verifyCommands:         # Actual commands to run
   - "curl -X POST localhost:3000/api/users -d '{...}'"
 dependsOn: ["US-000"]   # Previous task IDs
 discoveredFrom: null    # null for planned tasks; parent uid for discovered tasks
+requiresBrowserVerification: false  # true for UI tasks with mandatory browser evidence
 passes: false           # Will be set true when criteria met
 ```
+
+For UI stories, include both:
+- Acceptance criterion: `Verify in browser using dev-browser skill`
+- Verify command sentinel: `__BROWSER_VERIFY_REQUIRED__`
 
 **Priority Rules:**
 - Tasks with lower priority numbers execute first

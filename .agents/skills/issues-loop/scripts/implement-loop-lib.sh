@@ -151,6 +151,18 @@ initialize_missing_prd_fields() {
     needs_update=1
   fi
 
+  # Initialize missing root-level memory field
+  if jq -e '.memory' "$tmp_file" >/dev/null 2>&1; then
+    : # memory exists
+  else
+    jq '.memory = {"patterns": []}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.memory.patterns' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.memory.patterns = []' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+
   # Initialize missing root-level quality field for review lane state
   if jq -e '.quality' "$tmp_file" >/dev/null 2>&1; then
     : # quality exists
@@ -310,6 +322,14 @@ initialize_missing_prd_fields() {
       needs_update=1
     fi
 
+    # Initialize requiresBrowserVerification to false if missing
+    if jq -e --argjson idx "$i" '.userStories[$idx] | has("requiresBrowserVerification")' "$tmp_file" | grep -q 'true'; then
+      : # field exists
+    else
+      jq --argjson idx "$i" '.userStories[$idx].requiresBrowserVerification = false' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+      needs_update=1
+    fi
+
     i=$((i + 1))
   done
 
@@ -335,7 +355,8 @@ initialize_missing_prd_fields() {
 load_execution_config() {
   local config_file="${1:-.issueloop.config.json}"
 
-  EXEC_GATE_MODE="warn"
+  EXEC_GATE_MODE="enforce"
+  EXEC_EVENT_REQUIRED="true"
   EXEC_VERIFY_TIMEOUT_SECONDS=600
   EXEC_VERIFY_MAX_OUTPUT_LINES=80
   EXEC_VERIFY_GLOBAL_COMMANDS_JSON='[]'
@@ -343,6 +364,9 @@ load_execution_config() {
   EXEC_VERIFY_RUN_SECURITY_EACH="false"
   EXEC_SEARCH_REQUIRED="true"
   EXEC_SEARCH_MIN_QUERIES=2
+  EXEC_BROWSER_REQUIRED_FOR_UI="true"
+  EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE="true"
+  EXEC_BROWSER_ALLOWED_TOOLS_JSON='["playwright","dev-browser"]'
   EXEC_PLACEHOLDER_ENABLED="true"
   EXEC_PLACEHOLDER_PATTERNS_JSON='["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]'
   EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON='["(^|/)test(s)?/","\\\\.md$"]'
@@ -355,9 +379,15 @@ load_execution_config() {
   EXEC_CONTEXT_MAX_REVIEW_LOGS=4
   EXEC_MAX_TASK_ATTEMPTS=3
   EXEC_LABEL_PLANNING="AI: Planning"
+  MEMORY_AUTO_SYNC_DOCS="true"
+  MEMORY_MIN_CONFIDENCE="0.8"
+  MEMORY_DOC_TARGETS_JSON='["AGENTS.md","CLAUDE.md"]'
+  MEMORY_MAX_PATTERNS_PER_TASK=3
+  MEMORY_MANAGED_SECTION_MARKER="issues-loop:auto-patterns"
 
   if [ -f "$config_file" ]; then
-    EXEC_GATE_MODE=$(jq -r '.execution.gateMode // "warn"' "$config_file" 2>/dev/null || echo "warn")
+    EXEC_GATE_MODE=$(jq -r '.execution.gateMode // "enforce"' "$config_file" 2>/dev/null || echo "enforce")
+    EXEC_EVENT_REQUIRED=$(jq -r '.execution.eventEvidence.required // true' "$config_file" 2>/dev/null || echo "true")
     EXEC_VERIFY_TIMEOUT_SECONDS=$(jq -r '.execution.verify.commandTimeoutSeconds // 600' "$config_file" 2>/dev/null || echo "600")
     EXEC_VERIFY_MAX_OUTPUT_LINES=$(jq -r '.execution.verify.maxOutputLinesPerCommand // 80' "$config_file" 2>/dev/null || echo "80")
     EXEC_VERIFY_GLOBAL_COMMANDS_JSON=$(jq -c '.execution.verify.globalVerifyCommands // []' "$config_file" 2>/dev/null || echo '[]')
@@ -365,6 +395,9 @@ load_execution_config() {
     EXEC_VERIFY_RUN_SECURITY_EACH=$(jq -r '.execution.verify.runSecurityVerifyOnEveryTask // false' "$config_file" 2>/dev/null || echo "false")
     EXEC_SEARCH_REQUIRED=$(jq -r '.execution.searchEvidence.required // true' "$config_file" 2>/dev/null || echo "true")
     EXEC_SEARCH_MIN_QUERIES=$(jq -r '.execution.searchEvidence.minQueries // 2' "$config_file" 2>/dev/null || echo "2")
+    EXEC_BROWSER_REQUIRED_FOR_UI=$(jq -r '.execution.browserVerification.requiredForUiTasks // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE=$(jq -r '.execution.browserVerification.hardFailWhenUnavailable // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_BROWSER_ALLOWED_TOOLS_JSON=$(jq -c '.execution.browserVerification.allowedTools // ["playwright","dev-browser"]' "$config_file" 2>/dev/null || echo '["playwright","dev-browser"]')
     EXEC_PLACEHOLDER_ENABLED=$(jq -r '.execution.placeholder.enabled // true' "$config_file" 2>/dev/null || echo "true")
     EXEC_PLACEHOLDER_PATTERNS_JSON=$(jq -c '.execution.placeholder.patterns // ["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]' "$config_file" 2>/dev/null || echo '["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]')
     EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON=$(jq -c '.execution.placeholder.excludePathRegex // ["(^|/)test(s)?/","\\\\.md$"]' "$config_file" 2>/dev/null || echo '["(^|/)test(s)?/","\\\\.md$"]')
@@ -377,6 +410,11 @@ load_execution_config() {
     EXEC_CONTEXT_MAX_REVIEW_LOGS=$(jq -r '.execution.context.maxReviewLogs // 4' "$config_file" 2>/dev/null || echo "4")
     EXEC_MAX_TASK_ATTEMPTS=$(jq -r '.maxTaskAttempts // 3' "$config_file" 2>/dev/null || echo "3")
     EXEC_LABEL_PLANNING=$(jq -r '.labels.planning // "AI: Planning"' "$config_file" 2>/dev/null || echo "AI: Planning")
+    MEMORY_AUTO_SYNC_DOCS=$(jq -r '.memory.autoSyncDocs // true' "$config_file" 2>/dev/null || echo "true")
+    MEMORY_MIN_CONFIDENCE=$(jq -r '.memory.minConfidence // 0.8' "$config_file" 2>/dev/null || echo "0.8")
+    MEMORY_DOC_TARGETS_JSON=$(jq -c '.memory.docTargets // ["AGENTS.md","CLAUDE.md"]' "$config_file" 2>/dev/null || echo '["AGENTS.md","CLAUDE.md"]')
+    MEMORY_MAX_PATTERNS_PER_TASK=$(jq -r '.memory.maxPatternsPerTask // 3' "$config_file" 2>/dev/null || echo "3")
+    MEMORY_MANAGED_SECTION_MARKER=$(jq -r '.memory.managedSectionMarker // "issues-loop:auto-patterns"' "$config_file" 2>/dev/null || echo "issues-loop:auto-patterns")
   fi
 }
 
@@ -582,6 +620,529 @@ validate_search_evidence() {
         '{"ok":true,"queryCount":$q,"fileCount":$f,"reason":("advisory: fewer than " + ($min|tostring) + " search queries")}'
     fi
   fi
+}
+
+# Determine whether a task requires browser verification.
+#
+# Args:
+#   $1 - task JSON object
+#   $2 - required-for-ui flag ("true"/"false")
+#
+# Output: "true" or "false"
+task_requires_browser_verification() {
+  local task_json="${1:-}"
+  if [ -z "$task_json" ]; then
+    task_json='{}'
+  fi
+  local required_for_ui="${2:-true}"
+  local required_lower
+  required_lower=$(echo "$required_for_ui" | tr '[:upper:]' '[:lower:]')
+  if [ "$required_lower" != "true" ]; then
+    echo "false"
+    return 0
+  fi
+
+  local explicit_required
+  explicit_required=$(echo "$task_json" | jq -r '(.requiresBrowserVerification // false)' 2>/dev/null || echo "false")
+  if [ "$(echo "$explicit_required" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    echo "true"
+    return 0
+  fi
+
+  local criteria_requires
+  criteria_requires=$(echo "$task_json" | jq -r '
+    [(.acceptanceCriteria // [])[]? | tostring | test("verify in browser"; "i")] | any
+  ' 2>/dev/null || echo "false")
+  if [ "$(echo "$criteria_requires" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    echo "true"
+    return 0
+  fi
+
+  local verify_requires
+  verify_requires=$(echo "$task_json" | jq -r '
+    [(.verifyCommands // [])[]? | tostring | test("^__BROWSER_VERIFY_REQUIRED__$")] | any
+  ' 2>/dev/null || echo "false")
+  if [ "$(echo "$verify_requires" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    echo "true"
+    return 0
+  fi
+
+  echo "false"
+}
+
+# Extract browser verification JSON event blocks from issue comments.
+# Parses only fenced json blocks under '### Browser Event JSON' headings.
+#
+# Args:
+#   $1 - raw issue comments text
+#
+# Output: one browser_verification JSON object per line
+extract_browser_events_from_issue_comments() {
+  local comments="$1"
+  local in_event_section=0
+  local in_json_block=0
+  local json_buffer=""
+
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '### Browser Event JSON'; then
+      in_event_section=1
+      in_json_block=0
+      json_buffer=""
+      continue
+    fi
+
+    if [ "$in_event_section" -eq 1 ]; then
+      if echo "$line" | grep -qE '^\s*```json\s*$'; then
+        in_json_block=1
+        json_buffer=""
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ] && echo "$line" | grep -qE '^\s*```\s*$'; then
+        if [ -n "$json_buffer" ]; then
+          if echo "$json_buffer" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            local event_type
+            event_type=$(echo "$json_buffer" | jq -r '.type // ""' 2>/dev/null)
+            if [ "$event_type" = "browser_verification" ]; then
+              echo "$json_buffer"
+            fi
+          fi
+        fi
+        in_json_block=0
+        in_event_section=0
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ]; then
+        json_buffer="${json_buffer}${line}"
+        continue
+      fi
+
+      if echo "$line" | grep -qE '^#{1,4} |^---'; then
+        in_event_section=0
+        in_json_block=0
+        json_buffer=""
+      fi
+    fi
+  done <<< "$comments"
+}
+
+# Verify that a browser verification event was posted to GitHub for a task.
+#
+# Args:
+#   $1 - issue number
+#   $2 - task id
+#   $3 - expected task uid
+#   $4 - allowed tools JSON array
+#
+# Output: verified browser event JSON object, or empty
+# Returns: 0 when verified, 1 otherwise
+verify_browser_verification_on_github() {
+  local issue_number="$1"
+  local task_id="$2"
+  local expected_uid="$3"
+  local allowed_tools_json="${4:-[\"playwright\",\"dev-browser\"]}"
+
+  local recent_comments
+  recent_comments=$(gh issue view "$issue_number" --json comments \
+    --jq '.comments[-50:][] | @json' 2>/dev/null || echo "")
+  if [ -z "$recent_comments" ]; then
+    return 1
+  fi
+
+  local verified_event=""
+  while IFS= read -r raw_comment; do
+    [ -z "$raw_comment" ] && continue
+
+    local c_body
+    c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+    if ! echo "$c_body" | grep -q "## 🌐 Browser Verification: ${task_id}"; then
+      continue
+    fi
+
+    while IFS= read -r event; do
+      [ -z "$event" ] && continue
+      local event_task_id event_task_uid event_status event_tool tool_allowed
+      event_task_id=$(echo "$event" | jq -r '.taskId // ""' 2>/dev/null)
+      event_task_uid=$(echo "$event" | jq -r '.taskUid // ""' 2>/dev/null)
+      event_status=$(echo "$event" | jq -r '.status // ""' 2>/dev/null)
+      event_tool=$(echo "$event" | jq -r '.tool // ""' 2>/dev/null)
+      tool_allowed=$(echo "$allowed_tools_json" | jq -r --arg tool "$event_tool" '
+        map(tostring | ascii_downcase) | index(($tool | ascii_downcase)) != null
+      ' 2>/dev/null || echo "false")
+
+      if [ "$event_task_id" = "$task_id" ] &&
+         [ "$event_task_uid" = "$expected_uid" ] &&
+         [ "$(echo "$event_status" | tr '[:upper:]' '[:lower:]')" = "passed" ] &&
+         [ "$tool_allowed" = "true" ]; then
+        verified_event="$event"
+      fi
+    done <<< "$(extract_browser_events_from_issue_comments "$c_body" 2>/dev/null || true)"
+  done <<< "$recent_comments"
+
+  if [ -z "$verified_event" ]; then
+    return 1
+  fi
+
+  echo "$verified_event"
+  return 0
+}
+
+# Compute deterministic dedupe key for pattern memory.
+#
+# Args:
+#   $1 - statement
+#   $2 - scope
+#
+# Output: ptn_ + 12-char hash
+compute_pattern_memory_key() {
+  local statement="$1"
+  local scope="$2"
+  local normalized_statement normalized_scope hash
+  normalized_statement=$(echo "$statement" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{1,\}/ /g')
+  normalized_scope=$(echo "$scope" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\{1,\}/ /g')
+  hash=$(echo -n "${normalized_statement}|${normalized_scope}" | shasum -a 256 | cut -c1-12)
+  echo "ptn_${hash}"
+}
+
+# Ingest high-signal reusable patterns from task event JSON into prd memory.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - task event JSON object
+#   $3 - issue number
+#   $4 - max patterns per task
+#
+# Output: JSON array of newly ingested pattern objects
+ingest_task_patterns_into_prd() {
+  local prd_file="${1:-prd.json}"
+  local event_json="$2"
+  local issue_number="$3"
+  local max_patterns="${4:-3}"
+
+  if [ -z "$event_json" ] || [ "$event_json" = "null" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  local candidates
+  candidates=$(echo "$event_json" | jq -c --argjson max "$max_patterns" '
+    [
+      (.patterns // [])[]? |
+      {
+        "statement": ((.statement // "") | tostring | gsub("\\s+"; " ") | sub("^\\s+"; "") | sub("\\s+$"; "")),
+        "scope": ((.scope // "global") | tostring),
+        "files": [(.files // [])[]? | tostring | select(length > 0)],
+        "confidence": (if (.confidence | type) == "number" then .confidence else 0 end)
+      } |
+      select(.statement | length > 0)
+    ][:$max]
+  ' 2>/dev/null || echo "[]")
+
+  if [ -z "$candidates" ] || [ "$candidates" = "[]" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  local task_id task_uid commit event_ts event_issue
+  task_id=$(echo "$event_json" | jq -r '.taskId // ""' 2>/dev/null)
+  task_uid=$(echo "$event_json" | jq -r '.taskUid // ""' 2>/dev/null)
+  commit=$(echo "$event_json" | jq -r '.commit // ""' 2>/dev/null)
+  event_ts=$(echo "$event_json" | jq -r '.ts // ""' 2>/dev/null)
+  event_issue=$(echo "$event_json" | jq -r '.issue // empty' 2>/dev/null)
+  if [ -z "$event_issue" ]; then
+    event_issue="$issue_number"
+  fi
+
+  local added='[]'
+  while IFS= read -r pattern; do
+    [ -z "$pattern" ] && continue
+    local statement scope files confidence key exists
+    statement=$(echo "$pattern" | jq -r '.statement')
+    scope=$(echo "$pattern" | jq -r '.scope')
+    files=$(echo "$pattern" | jq -c '.files')
+    confidence=$(echo "$pattern" | jq -c '.confidence')
+    key=$(compute_pattern_memory_key "$statement" "$scope")
+    exists=$(jq -r --arg key "$key" '
+      [.memory.patterns[]? | select(.key == $key)] | length > 0
+    ' "$prd_file" 2>/dev/null || echo "false")
+    if [ "$exists" = "true" ]; then
+      continue
+    fi
+
+    jq --arg key "$key" \
+       --arg statement "$statement" \
+       --arg scope "$scope" \
+       --arg task_id "$task_id" \
+       --arg task_uid "$task_uid" \
+       --arg commit "$commit" \
+       --arg event_ts "$event_ts" \
+       --argjson issue "$event_issue" \
+       --argjson files "$files" \
+       --argjson confidence "$confidence" '
+      .memory.patterns += [{
+        "key": $key,
+        "statement": $statement,
+        "scope": $scope,
+        "files": $files,
+        "confidence": $confidence,
+        "issue": $issue,
+        "taskId": (if $task_id == "" then null else $task_id end),
+        "taskUid": (if $task_uid == "" then null else $task_uid end),
+        "commit": (if $commit == "" then null else $commit end),
+        "createdAt": (if $event_ts == "" then (now | todateiso8601) else $event_ts end),
+        "syncedDocs": []
+      }]
+    ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+    added=$(echo "$added" | jq --argjson pattern "$(jq -nc \
+      --arg key "$key" \
+      --arg statement "$statement" \
+      --arg scope "$scope" \
+      --argjson files "$files" \
+      --argjson confidence "$confidence" \
+      '{"key": $key, "statement": $statement, "scope": $scope, "files": $files, "confidence": $confidence}')" '. + [$pattern]')
+  done < <(echo "$candidates" | jq -c '.[]')
+
+  echo "$added"
+}
+
+# Resolve documentation targets from changed files by walking upward and
+# finding the closest existing target docs (AGENTS.md/CLAUDE.md by default).
+#
+# Args:
+#   $1 - commit hash
+#   $2 - doc targets JSON array
+#
+# Output: JSON array of absolute file paths
+resolve_doc_targets_for_commit() {
+  local commit_hash="$1"
+  local doc_targets_json="${2:-[\"AGENTS.md\",\"CLAUDE.md\"]}"
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+
+  local changed_files
+  if [ -n "$commit_hash" ] && [ "$commit_hash" != "null" ]; then
+    changed_files=$(git show --name-only --pretty="" "$commit_hash" 2>/dev/null || echo "")
+  else
+    changed_files=$(git diff --name-only HEAD 2>/dev/null || echo "")
+  fi
+
+  local targets=""
+  while IFS= read -r rel_path; do
+    [ -z "$rel_path" ] && continue
+    local dir found
+    dir=$(dirname "$rel_path")
+    found=0
+    while true; do
+      while IFS= read -r doc_name; do
+        [ -z "$doc_name" ] && continue
+        local candidate
+        if [ "$dir" = "." ]; then
+          candidate="${repo_root}/${doc_name}"
+        else
+          candidate="${repo_root}/${dir}/${doc_name}"
+        fi
+        if [ -f "$candidate" ]; then
+          if ! echo "$targets" | grep -Fxq "$candidate"; then
+            targets=$(printf "%s\n%s" "$targets" "$candidate" | sed '/^$/d')
+          fi
+          found=1
+          break
+        fi
+      done <<< "$(echo "$doc_targets_json" | jq -r '.[]' 2>/dev/null || true)"
+
+      if [ "$found" -eq 1 ] || [ "$dir" = "." ] || [ "$dir" = "/" ]; then
+        break
+      fi
+      dir=$(dirname "$dir")
+    done
+  done <<< "$changed_files"
+
+  # Fallback to root docs when no local target was found.
+  if [ -z "$targets" ]; then
+    while IFS= read -r doc_name; do
+      [ -z "$doc_name" ] && continue
+      local candidate="${repo_root}/${doc_name}"
+      if [ -f "$candidate" ]; then
+        targets=$(printf "%s\n%s" "$targets" "$candidate" | sed '/^$/d')
+      fi
+    done <<< "$(echo "$doc_targets_json" | jq -r '.[]' 2>/dev/null || true)"
+  fi
+
+  printf "%s\n" "$targets" | sed '/^$/d' | jq -R -s -c 'split("\n") | map(select(length > 0))'
+}
+
+# Upsert managed auto-pattern section in a doc file.
+#
+# Args:
+#   $1 - doc path
+#   $2 - marker base (e.g., issues-loop:auto-patterns)
+#   $3 - bullets JSON array
+#
+# Output: "changed" or "unchanged"
+upsert_doc_pattern_section() {
+  local doc_path="$1"
+  local marker="$2"
+  local bullets_json="${3:-[]}"
+
+  python3 - "$doc_path" "$marker" "$bullets_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+doc_path = Path(sys.argv[1])
+marker = sys.argv[2]
+bullets = json.loads(sys.argv[3] or "[]")
+
+if not doc_path.exists():
+    print("unchanged")
+    raise SystemExit(0)
+
+content = doc_path.read_text(encoding="utf-8", errors="ignore")
+start_marker = f"<!-- {marker}:start -->"
+end_marker = f"<!-- {marker}:end -->"
+
+new_bullets = [b for b in bullets if isinstance(b, str) and b.strip()]
+if not new_bullets:
+    print("unchanged")
+    raise SystemExit(0)
+
+def merge_unique(existing_lines, additions):
+    merged = []
+    for line in existing_lines + additions:
+        line = line.strip()
+        if not line:
+            continue
+        if line not in merged:
+            merged.append(line)
+    return merged
+
+changed = False
+if start_marker in content and end_marker in content and content.index(start_marker) < content.index(end_marker):
+    start_idx = content.index(start_marker)
+    end_idx = content.index(end_marker)
+    section_body = content[start_idx + len(start_marker):end_idx]
+    existing = [line.strip() for line in section_body.splitlines() if line.strip().startswith("- ")]
+    merged = merge_unique(existing, new_bullets)
+    replacement = start_marker + "\n" + "\n".join(merged) + "\n" + end_marker
+    original = content[start_idx:end_idx + len(end_marker)]
+    if replacement != original:
+        content = content[:start_idx] + replacement + content[end_idx + len(end_marker):]
+        changed = True
+else:
+    merged = merge_unique([], new_bullets)
+    append_block = "\n\n" + start_marker + "\n" + "\n".join(merged) + "\n" + end_marker + "\n"
+    content = content.rstrip() + append_block
+    changed = True
+
+if changed:
+    doc_path.write_text(content, encoding="utf-8")
+    print("changed")
+else:
+    print("unchanged")
+PY
+}
+
+# Record synced docs for memory pattern keys.
+#
+# Args:
+#   $1 - prd path
+#   $2 - pattern keys JSON array
+#   $3 - synced docs JSON array
+mark_memory_patterns_synced_docs() {
+  local prd_file="${1:-prd.json}"
+  local pattern_keys_json="${2:-[]}"
+  local synced_docs_json="${3:-[]}"
+
+  jq --argjson keys "$pattern_keys_json" --argjson docs "$synced_docs_json" '
+    .memory.patterns = ((.memory.patterns // []) | map(
+      if (.key as $k | ($keys | index($k) != null)) then
+        .syncedDocs = (((.syncedDocs // []) + $docs) | unique)
+      else . end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Sync high-confidence task patterns into target AGENTS/CLAUDE docs.
+#
+# Args:
+#   $1 - prd path
+#   $2 - issue number
+#   $3 - task id
+#   $4 - task uid
+#   $5 - commit hash
+#   $6 - patterns JSON array (newly ingested)
+#   $7 - auto-sync docs flag
+#   $8 - min confidence
+#   $9 - doc targets JSON array
+#   $10 - managed section marker
+#
+# Output: JSON object {"docsChanged":bool,"syncedDocs":[...],"syncedPatternKeys":[...]}
+sync_task_patterns_to_docs() {
+  local prd_file="${1:-prd.json}"
+  local issue_number="$2"
+  local task_id="$3"
+  local task_uid="$4"
+  local commit_hash="$5"
+  local patterns_json="${6:-[]}"
+  local auto_sync="${7:-true}"
+  local min_confidence="${8:-0.8}"
+  local doc_targets_json="${9:-[\"AGENTS.md\",\"CLAUDE.md\"]}"
+  local marker="${10:-issues-loop:auto-patterns}"
+
+  if [ "$(echo "$auto_sync" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
+    echo '{"docsChanged":false,"syncedDocs":[],"syncedPatternKeys":[]}'
+    return 0
+  fi
+  if [ -z "$patterns_json" ] || [ "$patterns_json" = "[]" ] || [ "$patterns_json" = "null" ]; then
+    echo '{"docsChanged":false,"syncedDocs":[],"syncedPatternKeys":[]}'
+    return 0
+  fi
+
+  local eligible_patterns
+  eligible_patterns=$(echo "$patterns_json" | jq -c --argjson min "$min_confidence" '
+    [.[] | select((.confidence // 0) >= $min)]
+  ' 2>/dev/null || echo "[]")
+  if [ "$eligible_patterns" = "[]" ]; then
+    echo '{"docsChanged":false,"syncedDocs":[],"syncedPatternKeys":[]}'
+    return 0
+  fi
+
+  local target_docs_json
+  target_docs_json=$(resolve_doc_targets_for_commit "$commit_hash" "$doc_targets_json")
+  if [ -z "$target_docs_json" ] || [ "$target_docs_json" = "[]" ]; then
+    echo '{"docsChanged":false,"syncedDocs":[],"syncedPatternKeys":[]}'
+    return 0
+  fi
+
+  local bullet_lines_json
+  bullet_lines_json=$(echo "$eligible_patterns" | jq -c --arg issue "$issue_number" --arg task "$task_id" '
+    [.[] | "- [\(.scope)] \(.statement) (source: #\($issue) \($task))"]
+  ')
+
+  local docs_changed="false"
+  local synced_docs='[]'
+  while IFS= read -r doc_path; do
+    [ -z "$doc_path" ] && continue
+    local upsert_result
+    upsert_result=$(upsert_doc_pattern_section "$doc_path" "$marker" "$bullet_lines_json")
+    if [ "$upsert_result" = "changed" ]; then
+      docs_changed="true"
+      synced_docs=$(echo "$synced_docs" | jq --arg path "$doc_path" '. + [$path] | unique')
+    fi
+  done < <(echo "$target_docs_json" | jq -r '.[]')
+
+  if [ "$docs_changed" = "true" ]; then
+    local synced_keys
+    synced_keys=$(echo "$eligible_patterns" | jq -c '[.[].key]')
+    mark_memory_patterns_synced_docs "$prd_file" "$synced_keys" "$synced_docs"
+    jq -nc --argjson docs "$synced_docs" --argjson keys "$synced_keys" \
+      '{"docsChanged":true,"syncedDocs":$docs,"syncedPatternKeys":$keys}'
+    return 0
+  fi
+
+  echo '{"docsChanged":false,"syncedDocs":[],"syncedPatternKeys":[]}'
 }
 
 # Scan added lines for placeholder patterns.

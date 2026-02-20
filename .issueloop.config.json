@@ -31,6 +31,7 @@
     "finalReport": "## 📊 Final Report",
     "compactedSummary": "## 🧾 Compacted Summary",
     "wisp": "## 🪶 Wisp",
+    "browserVerification": "## 🌐 Browser Verification:",
     "replanCheckpoint": "## 🔁 Replan Checkpoint"
   },
   "taskLogJsonVersion": 1,
@@ -55,7 +56,10 @@
     "debug": "fix"
   },
   "execution": {
-    "gateMode": "warn",
+    "gateMode": "enforce",
+    "eventEvidence": {
+      "required": true
+    },
     "verify": {
       "commandTimeoutSeconds": 600,
       "maxOutputLinesPerCommand": 80,
@@ -66,6 +70,14 @@
     "searchEvidence": {
       "required": true,
       "minQueries": 2
+    },
+    "browserVerification": {
+      "requiredForUiTasks": true,
+      "hardFailWhenUnavailable": true,
+      "allowedTools": [
+        "playwright",
+        "dev-browser"
+      ]
     },
     "placeholder": {
       "enabled": true,
@@ -93,5 +105,15 @@
       "maxDiscoveryNotes": 6,
       "maxReviewLogs": 4
     }
+  },
+  "memory": {
+    "autoSyncDocs": true,
+    "minConfidence": 0.8,
+    "docTargets": [
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "maxPatternsPerTask": 3,
+    "managedSectionMarker": "issues-loop:auto-patterns"
   }
 }

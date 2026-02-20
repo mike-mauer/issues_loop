@@ -995,6 +995,141 @@ export -f gh
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TEST 14: Browser Verification + Pattern Memory
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 14: Browser Verification + Pattern Memory ──"
+
+cat > "$TEST_DIR/prd-browser-init.json" << 'FIXTURE'
+{
+  "issueNumber": 77,
+  "formula": "feature",
+  "compaction": {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 5},
+  "userStories": [
+    {"id":"US-001","title":"UI task","passes":false,"attempts":0}
+  ]
+}
+FIXTURE
+
+initialize_missing_prd_fields "$TEST_DIR/prd-browser-init.json"
+memory_type=$(jq -r '.memory.patterns | type' "$TEST_DIR/prd-browser-init.json")
+assert_eq "$memory_type" "array" "14a: initialize_missing_prd_fields adds memory.patterns"
+browser_flag=$(jq -r '.userStories[0].requiresBrowserVerification' "$TEST_DIR/prd-browser-init.json")
+assert_eq "$browser_flag" "false" "14a: initialize_missing_prd_fields adds requiresBrowserVerification=false"
+
+req_explicit=$(task_requires_browser_verification '{"requiresBrowserVerification":true}' "true")
+assert_eq "$req_explicit" "true" "14b: task_requires_browser_verification honors explicit flag"
+req_criteria=$(task_requires_browser_verification '{"acceptanceCriteria":["Verify in browser using dev-browser skill"]}' "true")
+assert_eq "$req_criteria" "true" "14b: task_requires_browser_verification detects acceptance criteria trigger"
+req_verify=$(task_requires_browser_verification '{"verifyCommands":["__BROWSER_VERIFY_REQUIRED__"]}' "true")
+assert_eq "$req_verify" "true" "14b: task_requires_browser_verification detects verify command sentinel"
+req_disabled=$(task_requires_browser_verification '{"acceptanceCriteria":["Verify in browser using dev-browser skill"]}' "false")
+assert_eq "$req_disabled" "false" "14b: task_requires_browser_verification respects requiredForUiTasks=false"
+
+BROWSER_COMMENTS='## 🌐 Browser Verification: US-003
+
+### Browser Event JSON
+```json
+{"v":1,"type":"browser_verification","issue":42,"taskId":"US-003","taskUid":"tsk_browser001","tool":"playwright","status":"passed","artifacts":["screenshot:/tmp/ui.png"],"ts":"2026-02-20T12:00:00Z"}
+```'
+browser_events=$(extract_browser_events_from_issue_comments "$BROWSER_COMMENTS")
+assert_contains "$browser_events" '"type":"browser_verification"' "14c: extract_browser_events_from_issue_comments parses browser events"
+
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+{"body":"## 🌐 Browser Verification: US-003\n\n### Browser Event JSON\n```json\n{\"v\":1,\"type\":\"browser_verification\",\"issue\":42,\"taskId\":\"US-003\",\"taskUid\":\"tsk_browser001\",\"tool\":\"playwright\",\"status\":\"passed\",\"artifacts\":[\"screenshot:/tmp/ui.png\"],\"ts\":\"2026-02-20T12:00:00Z\"}\n```"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+verified_browser=$(verify_browser_verification_on_github 42 "US-003" "tsk_browser001" '["playwright","dev-browser"]')
+assert_contains "$verified_browser" '"tool":"playwright"' "14d: verify_browser_verification_on_github validates tool/task/uid"
+
+no_browser=$(verify_browser_verification_on_github 42 "US-003" "tsk_browser001" '["dev-browser"]' || true)
+assert_eq "$no_browser" "" "14d: verify_browser_verification_on_github rejects non-allowlisted tool"
+
+gh() { :; }
+export -f gh
+
+cat > "$TEST_DIR/prd-patterns.json" << 'FIXTURE'
+{
+  "issueNumber": 88,
+  "memory": {"patterns": []},
+  "userStories": []
+}
+FIXTURE
+
+pattern_event='{"issue":88,"taskId":"US-009","taskUid":"tsk_pat001","commit":"abc1234","ts":"2026-02-20T12:30:00Z","patterns":[{"statement":"When changing auth route, update auth middleware","scope":"src/auth","files":["src/auth/route.ts"],"confidence":0.9},{"statement":"When changing auth route, update auth middleware","scope":"src/auth","files":["src/auth/route.ts"],"confidence":0.9}]}'
+added_patterns=$(ingest_task_patterns_into_prd "$TEST_DIR/prd-patterns.json" "$pattern_event" 88 3)
+added_count=$(echo "$added_patterns" | jq -r 'length')
+assert_eq "$added_count" "1" "14e: ingest_task_patterns_into_prd dedupes by statement+scope"
+stored_count=$(jq -r '.memory.patterns | length' "$TEST_DIR/prd-patterns.json")
+assert_eq "$stored_count" "1" "14e: ingested pattern persisted to prd memory"
+
+added_again=$(ingest_task_patterns_into_prd "$TEST_DIR/prd-patterns.json" "$pattern_event" 88 3)
+assert_eq "$added_again" "[]" "14e: repeated pattern ingestion yields no new entries"
+
+DOC_REPO="$TEST_DIR/doc-repo"
+mkdir -p "$DOC_REPO/src/auth"
+cat > "$DOC_REPO/AGENTS.md" << 'DOC'
+# Agent Notes
+DOC
+
+git() {
+  if [ "$1" = "rev-parse" ] && [ "$2" = "--show-toplevel" ]; then
+    echo "$DOC_REPO"
+    return 0
+  fi
+  if [ "$1" = "show" ]; then
+    return 0
+  fi
+  return 0
+}
+export -f git
+
+sync_result=$(sync_task_patterns_to_docs \
+  "$TEST_DIR/prd-patterns.json" \
+  88 \
+  "US-009" \
+  "tsk_pat001" \
+  "" \
+  "$added_patterns" \
+  "true" \
+  "0.8" \
+  '["AGENTS.md","CLAUDE.md"]' \
+  "issues-loop:auto-patterns")
+sync_changed=$(echo "$sync_result" | jq -r '.docsChanged')
+assert_eq "$sync_changed" "true" "14f: sync_task_patterns_to_docs updates managed docs for high-confidence patterns"
+assert_contains "$(cat "$DOC_REPO/AGENTS.md")" "<!-- issues-loop:auto-patterns:start -->" "14f: managed section start marker inserted"
+assert_contains "$(cat "$DOC_REPO/AGENTS.md")" "source: #88 US-009" "14f: synced bullet includes source metadata"
+
+sync_result_second=$(sync_task_patterns_to_docs \
+  "$TEST_DIR/prd-patterns.json" \
+  88 \
+  "US-009" \
+  "tsk_pat001" \
+  "" \
+  "$added_patterns" \
+  "true" \
+  "0.8" \
+  '["AGENTS.md","CLAUDE.md"]' \
+  "issues-loop:auto-patterns")
+sync_changed_second=$(echo "$sync_result_second" | jq -r '.docsChanged')
+assert_eq "$sync_changed_second" "false" "14f: sync_task_patterns_to_docs is idempotent"
+
+synced_docs_len=$(jq -r '.memory.patterns[0].syncedDocs | length' "$TEST_DIR/prd-patterns.json")
+assert_eq "$synced_docs_len" "1" "14f: synced docs are recorded in prd memory"
+
+# Restore git/gh mocks
+git() { :; }
+gh() { :; }
+export -f git gh
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Results Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

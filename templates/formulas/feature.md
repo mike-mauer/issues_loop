@@ -70,6 +70,7 @@ Build the user-facing components, pages, or visual elements.
 - `component renders without errors`
 - `npm run build succeeds`
 - `route {path} is accessible`
+- `verify in browser using dev-browser skill`
 
 **Verify command patterns:**
 ```bash
@@ -77,6 +78,7 @@ npm run build
 npm run typecheck
 test -f {component path} && echo "Component exists"
 npm run test -- --grep "{component name}"
+__BROWSER_VERIFY_REQUIRED__
 ```
 
 ### Phase 4: Integration
