@@ -111,8 +111,8 @@ extract_json_events_from_issue_comments() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Initialize missing fields in prd.json to safe defaults.
-# Handles legacy prd.json files that lack formula, compaction, or per-story
-# uid/discoveredFrom/discoverySource fields.
+# Handles legacy prd.json files that lack formula, compaction, quality, or
+# per-story uid/discoveredFrom/discoverySource fields.
 #
 # Args:
 #   $1 - path to prd.json (default: "prd.json")
@@ -148,6 +148,124 @@ initialize_missing_prd_fields() {
     : # compaction exists
   else
     jq '.compaction = {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 5}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+
+  # Initialize missing root-level quality field for review lane state
+  if jq -e '.quality' "$tmp_file" >/dev/null 2>&1; then
+    : # quality exists
+  else
+    jq '.quality = {
+      "reviewMode": "hybrid",
+      "reviewPolicy": {
+        "autoEnqueueSeverities": ["critical", "high"],
+        "approvalRequiredSeverities": ["medium", "low"],
+        "minConfidenceForAutoEnqueue": 0.75,
+        "maxFindingsPerReview": 5
+      },
+      "findings": [],
+      "processedReviewKeys": [],
+      "finalReview": {
+        "status": "pending",
+        "reviewedCommit": null,
+        "lastReviewId": null,
+        "updatedAt": null
+      }
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+
+  # Fill missing quality subfields on partially initialized files
+  if jq -e '.quality.reviewMode' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewMode = "hybrid"' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy = {
+      "autoEnqueueSeverities": ["critical", "high"],
+      "approvalRequiredSeverities": ["medium", "low"],
+      "minConfidenceForAutoEnqueue": 0.75,
+      "maxFindingsPerReview": 5
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.autoEnqueueSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical", "high"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.approvalRequiredSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["medium", "low"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.minConfidenceForAutoEnqueue = 0.75' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewPolicy.maxFindingsPerReview' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewPolicy.maxFindingsPerReview = 5' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.findings' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.findings = []' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.processedReviewKeys' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.processedReviewKeys = []' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview = {
+      "status": "pending",
+      "reviewedCommit": null,
+      "lastReviewId": null,
+      "updatedAt": null
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.status' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.status = "pending"' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.reviewedCommit' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.reviewedCommit = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.lastReviewId' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.lastReviewId = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.finalReview.updatedAt' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.finalReview.updatedAt = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution = {
+      "consecutiveRetries": 0,
+      "currentTaskId": null,
+      "currentTaskRetryStreak": 0,
+      "lastReplanAt": null,
+      "lastReplanReason": null
+    }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.consecutiveRetries' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.consecutiveRetries = 0' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.currentTaskId' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.currentTaskId = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.currentTaskRetryStreak' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.currentTaskRetryStreak = 0' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastReplanAt' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastReplanAt = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastReplanReason' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastReplanReason = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
 
@@ -206,6 +324,501 @@ initialize_missing_prd_fields() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Execution Configuration + Authoritative Gates
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Load execution hardening settings from .issueloop.config.json with safe
+# defaults. Values are exported as global shell vars for the loop script.
+#
+# Args:
+#   $1 - path to config file (default: ".issueloop.config.json")
+load_execution_config() {
+  local config_file="${1:-.issueloop.config.json}"
+
+  EXEC_GATE_MODE="warn"
+  EXEC_VERIFY_TIMEOUT_SECONDS=600
+  EXEC_VERIFY_MAX_OUTPUT_LINES=80
+  EXEC_VERIFY_GLOBAL_COMMANDS_JSON='[]'
+  EXEC_VERIFY_SECURITY_COMMANDS_JSON='[]'
+  EXEC_VERIFY_RUN_SECURITY_EACH="false"
+  EXEC_SEARCH_REQUIRED="true"
+  EXEC_SEARCH_MIN_QUERIES=2
+  EXEC_PLACEHOLDER_ENABLED="true"
+  EXEC_PLACEHOLDER_PATTERNS_JSON='["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]'
+  EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON='["(^|/)test(s)?/","\\\\.md$"]'
+  EXEC_STALE_ENABLED="true"
+  EXEC_STALE_SAME_TASK_THRESHOLD=2
+  EXEC_STALE_CONSECUTIVE_THRESHOLD=4
+  EXEC_CONTEXT_PREFER_COMPACTED="true"
+  EXEC_CONTEXT_MAX_TASK_LOGS=8
+  EXEC_CONTEXT_MAX_DISCOVERY_NOTES=6
+  EXEC_CONTEXT_MAX_REVIEW_LOGS=4
+  EXEC_MAX_TASK_ATTEMPTS=3
+  EXEC_LABEL_PLANNING="AI: Planning"
+
+  if [ -f "$config_file" ]; then
+    EXEC_GATE_MODE=$(jq -r '.execution.gateMode // "warn"' "$config_file" 2>/dev/null || echo "warn")
+    EXEC_VERIFY_TIMEOUT_SECONDS=$(jq -r '.execution.verify.commandTimeoutSeconds // 600' "$config_file" 2>/dev/null || echo "600")
+    EXEC_VERIFY_MAX_OUTPUT_LINES=$(jq -r '.execution.verify.maxOutputLinesPerCommand // 80' "$config_file" 2>/dev/null || echo "80")
+    EXEC_VERIFY_GLOBAL_COMMANDS_JSON=$(jq -c '.execution.verify.globalVerifyCommands // []' "$config_file" 2>/dev/null || echo '[]')
+    EXEC_VERIFY_SECURITY_COMMANDS_JSON=$(jq -c '.execution.verify.securityVerifyCommands // []' "$config_file" 2>/dev/null || echo '[]')
+    EXEC_VERIFY_RUN_SECURITY_EACH=$(jq -r '.execution.verify.runSecurityVerifyOnEveryTask // false' "$config_file" 2>/dev/null || echo "false")
+    EXEC_SEARCH_REQUIRED=$(jq -r '.execution.searchEvidence.required // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_SEARCH_MIN_QUERIES=$(jq -r '.execution.searchEvidence.minQueries // 2' "$config_file" 2>/dev/null || echo "2")
+    EXEC_PLACEHOLDER_ENABLED=$(jq -r '.execution.placeholder.enabled // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_PLACEHOLDER_PATTERNS_JSON=$(jq -c '.execution.placeholder.patterns // ["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]' "$config_file" 2>/dev/null || echo '["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]')
+    EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON=$(jq -c '.execution.placeholder.excludePathRegex // ["(^|/)test(s)?/","\\\\.md$"]' "$config_file" 2>/dev/null || echo '["(^|/)test(s)?/","\\\\.md$"]')
+    EXEC_STALE_ENABLED=$(jq -r '.execution.stalePlan.enabled // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_STALE_SAME_TASK_THRESHOLD=$(jq -r '.execution.stalePlan.sameTaskRetryThreshold // 2' "$config_file" 2>/dev/null || echo "2")
+    EXEC_STALE_CONSECUTIVE_THRESHOLD=$(jq -r '.execution.stalePlan.consecutiveRetryThreshold // 4' "$config_file" 2>/dev/null || echo "4")
+    EXEC_CONTEXT_PREFER_COMPACTED=$(jq -r '.execution.context.preferCompactedSummary // true' "$config_file" 2>/dev/null || echo "true")
+    EXEC_CONTEXT_MAX_TASK_LOGS=$(jq -r '.execution.context.maxTaskLogs // 8' "$config_file" 2>/dev/null || echo "8")
+    EXEC_CONTEXT_MAX_DISCOVERY_NOTES=$(jq -r '.execution.context.maxDiscoveryNotes // 6' "$config_file" 2>/dev/null || echo "6")
+    EXEC_CONTEXT_MAX_REVIEW_LOGS=$(jq -r '.execution.context.maxReviewLogs // 4' "$config_file" 2>/dev/null || echo "4")
+    EXEC_MAX_TASK_ATTEMPTS=$(jq -r '.maxTaskAttempts // 3' "$config_file" 2>/dev/null || echo "3")
+    EXEC_LABEL_PLANNING=$(jq -r '.labels.planning // "AI: Planning"' "$config_file" 2>/dev/null || echo "AI: Planning")
+  fi
+}
+
+# Run a command with timeout when timeout binaries are available.
+#
+# Args:
+#   $1 - shell command string
+#   $2 - timeout seconds
+run_command_with_timeout() {
+  local cmd="$1"
+  local timeout_seconds="${2:-600}"
+
+  if [ -z "$cmd" ]; then
+    return 0
+  fi
+
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$timeout_seconds" bash -lc "$cmd"
+  elif command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" bash -lc "$cmd"
+  else
+    bash -lc "$cmd"
+  fi
+}
+
+# Execute authoritative verify commands for the current task.
+#
+# Args:
+#   $1 - task verifyCommands JSON array
+#   $2 - timeout seconds
+#   $3 - max output tail lines per command
+#   $4 - global verify commands JSON array
+#   $5 - security verify commands JSON array
+#   $6 - run security commands on every task ("true"/"false")
+#
+# Output: compact JSON
+# {
+#   "commands":[...],
+#   "passed":[...],
+#   "failed":[{"command":"...","exitCode":1,"outputTail":"..."}],
+#   "allPassed":true|false
+# }
+run_verify_suite() {
+  local task_verify_json="${1:-[]}"
+  local timeout_seconds="${2:-600}"
+  local max_output_lines="${3:-80}"
+  local global_verify_json="${4:-[]}"
+  local security_verify_json="${5:-[]}"
+  local run_security="${6:-false}"
+
+  local all_commands_json
+  all_commands_json=$(jq -nc \
+    --argjson task "$task_verify_json" \
+    --argjson global "$global_verify_json" \
+    --argjson security "$security_verify_json" \
+    --arg run_security "$run_security" '
+      ($task // []) as $task_cmds |
+      ($global // []) as $global_cmds |
+      ($security // []) as $security_cmds |
+      (
+        $task_cmds
+        + $global_cmds
+        + (if ($run_security | ascii_downcase) == "true" then $security_cmds else [] end)
+      )
+      | map(select(type == "string" and length > 0))
+      | unique
+    ')
+
+  local passed='[]'
+  local failed='[]'
+  local command_count
+  command_count=$(echo "$all_commands_json" | jq 'length')
+
+  local i=0
+  while [ "$i" -lt "$command_count" ]; do
+    local command output_file exit_code output_tail
+    command=$(echo "$all_commands_json" | jq -r --argjson idx "$i" '.[$idx]')
+    output_file=$(mktemp)
+
+    set +e
+    run_command_with_timeout "$command" "$timeout_seconds" >"$output_file" 2>&1
+    exit_code=$?
+    set -e
+
+    output_tail=$(tail -n "$max_output_lines" "$output_file" 2>/dev/null || true)
+    rm -f "$output_file"
+
+    if [ "$exit_code" -eq 0 ]; then
+      passed=$(echo "$passed" | jq --arg command "$command" '. + [$command]')
+    else
+      failed=$(echo "$failed" | jq \
+        --arg command "$command" \
+        --argjson exit_code "$exit_code" \
+        --arg output_tail "$output_tail" \
+        '. + [{"command": $command, "exitCode": $exit_code, "outputTail": $output_tail}]')
+    fi
+
+    i=$((i + 1))
+  done
+
+  local failed_count all_passed
+  failed_count=$(echo "$failed" | jq 'length')
+  if [ "$failed_count" -eq 0 ]; then
+    all_passed="true"
+  else
+    all_passed="false"
+  fi
+
+  jq -nc \
+    --argjson commands "$all_commands_json" \
+    --argjson passed "$passed" \
+    --argjson failed "$failed" \
+    --argjson all_passed "$all_passed" \
+    '{
+      "commands": $commands,
+      "passed": $passed,
+      "failed": $failed,
+      "allPassed": $all_passed
+    }'
+}
+
+# Update task status in prd.json from authoritative orchestrator result.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - task id
+#   $3 - pass boolean ("true"/"false")
+#
+# Output: attempt number after update
+update_task_state_authoritative() {
+  local prd_file="${1:-prd.json}"
+  local task_id="$2"
+  local pass_bool="${3:-false}"
+  local now_ts
+  now_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  jq --arg task_id "$task_id" --arg now_ts "$now_ts" --arg pass_bool "$pass_bool" '
+    .userStories = (.userStories | map(
+      if .id == $task_id then
+        .attempts = ((.attempts // 0) + 1) |
+        .lastAttempt = $now_ts |
+        .passes = (($pass_bool | ascii_downcase) == "true")
+      else . end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+  jq -r --arg task_id "$task_id" '.userStories[] | select(.id == $task_id) | (.attempts // 0)' "$prd_file"
+}
+
+# Return 0 when task attempts are exhausted (>= max attempts).
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - task id
+#   $3 - max attempts
+is_task_exhausted() {
+  local prd_file="${1:-prd.json}"
+  local task_id="$2"
+  local max_attempts="${3:-3}"
+  local attempts
+  attempts=$(jq -r --arg task_id "$task_id" '.userStories[] | select(.id == $task_id) | (.attempts // 0)' "$prd_file" 2>/dev/null || echo "0")
+  [ "$attempts" -ge "$max_attempts" ]
+}
+
+# Validate search evidence block in task log event JSON.
+#
+# Args:
+#   $1 - event JSON object
+#   $2 - min required query count
+#   $3 - required flag ("true"/"false")
+#
+# Output:
+# {"ok":true|false,"queryCount":N,"fileCount":N,"reason":"..."}
+validate_search_evidence() {
+  local event_json="${1:-}"
+  local min_queries="${2:-2}"
+  local required="${3:-true}"
+
+  if [ -z "$event_json" ] || [ "$event_json" = "null" ]; then
+    if [ "$(echo "$required" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      echo '{"ok":false,"queryCount":0,"fileCount":0,"reason":"task log event missing"}'
+    else
+      echo '{"ok":true,"queryCount":0,"fileCount":0,"reason":"task log event missing (advisory)"}'
+    fi
+    return 0
+  fi
+
+  local query_count file_count
+  query_count=$(echo "$event_json" | jq '[.search.queries[]? | select(type == "string" and length > 0)] | length' 2>/dev/null || echo "0")
+  file_count=$(echo "$event_json" | jq '[.search.filesInspected[]? | select(type == "string" and length > 0)] | length' 2>/dev/null || echo "0")
+
+  if [ "$query_count" -ge "$min_queries" ]; then
+    jq -nc --argjson q "$query_count" --argjson f "$file_count" \
+      '{"ok":true,"queryCount":$q,"fileCount":$f,"reason":"search evidence present"}'
+  else
+    local required_lower
+    required_lower=$(echo "$required" | tr '[:upper:]' '[:lower:]')
+    if [ "$required_lower" = "true" ]; then
+      jq -nc --argjson q "$query_count" --argjson f "$file_count" --argjson min "$min_queries" \
+        '{"ok":false,"queryCount":$q,"fileCount":$f,"reason":("requires at least " + ($min|tostring) + " search queries")}'
+    else
+      jq -nc --argjson q "$query_count" --argjson f "$file_count" --argjson min "$min_queries" \
+        '{"ok":true,"queryCount":$q,"fileCount":$f,"reason":("advisory: fewer than " + ($min|tostring) + " search queries")}'
+    fi
+  fi
+}
+
+# Scan added lines for placeholder patterns.
+#
+# Args:
+#   $1 - commit hash to inspect, or "WORKTREE" for unstaged/staged worktree diff
+#   $2 - placeholder regex patterns JSON array
+#   $3 - file exclude regex JSON array
+#
+# Output: JSON array of matches
+# [{"file":"...","line":42,"pattern":"TODO\\b","snippet":"TODO: ..."}]
+scan_placeholder_patterns() {
+  local commit_target="${1:-WORKTREE}"
+  local patterns_json="${2:-[]}"
+  local exclude_json="${3:-[]}"
+
+  local diff_file
+  diff_file=$(mktemp)
+
+  if [ -n "$commit_target" ] && [ "$commit_target" != "WORKTREE" ] && [ "$commit_target" != "null" ]; then
+    git show --no-color --unified=0 --pretty="" "$commit_target" > "$diff_file" 2>/dev/null || true
+  else
+    git diff --no-color --unified=0 HEAD > "$diff_file" 2>/dev/null || git diff --no-color --unified=0 > "$diff_file" 2>/dev/null || true
+  fi
+
+  python3 - "$patterns_json" "$exclude_json" "$diff_file" <<'PY'
+import json
+import re
+import sys
+
+patterns = json.loads(sys.argv[1] or "[]")
+exclude = json.loads(sys.argv[2] or "[]")
+diff_path = sys.argv[3]
+
+try:
+    with open(diff_path, "r", encoding="utf-8", errors="ignore") as f:
+        diff = f.read().splitlines()
+except FileNotFoundError:
+    print("[]")
+    raise SystemExit(0)
+
+exclude_re = [re.compile(x, re.IGNORECASE) for x in exclude if x]
+compiled = []
+for p in patterns:
+    if not p:
+        continue
+    try:
+        compiled.append((p, re.compile(p, re.IGNORECASE)))
+    except re.error:
+        continue
+
+matches = []
+current_file = None
+line_no = 0
+
+for line in diff:
+    if line.startswith("+++ "):
+        path = line[4:].strip()
+        if path.startswith("b/"):
+            path = path[2:]
+        current_file = path
+        continue
+    if line.startswith("@@ "):
+        m = re.search(r"\+(\d+)", line)
+        line_no = int(m.group(1)) if m else 0
+        continue
+    if current_file is None:
+        continue
+    if any(r.search(current_file) for r in exclude_re):
+        continue
+    if line.startswith("+") and not line.startswith("+++"):
+        snippet = line[1:]
+        for original, pattern in compiled:
+            if pattern.search(snippet):
+                matches.append(
+                    {
+                        "file": current_file,
+                        "line": line_no,
+                        "pattern": original,
+                        "snippet": snippet[:200],
+                    }
+                )
+                break
+        line_no += 1
+    elif line.startswith(" "):
+        line_no += 1
+
+print(json.dumps(matches, separators=(",", ":")))
+PY
+
+  rm -f "$diff_file"
+}
+
+# Build a compact memory bundle from issue comments to keep context lean.
+#
+# Args:
+#   $1 - issue number
+#   $2 - prefer compacted summary ("true"/"false")
+#   $3 - max task logs
+#   $4 - max discovery notes
+#   $5 - max review logs
+#
+# Output: markdown string
+build_issue_context_bundle() {
+  local issue_number="$1"
+  local prefer_compacted="${2:-true}"
+  local max_task_logs="${3:-8}"
+  local max_discovery_notes="${4:-6}"
+  local max_review_logs="${5:-4}"
+
+  local comments_json
+  comments_json=$(gh issue view "$issue_number" --json comments --jq '.comments' 2>/dev/null || echo "[]")
+
+  local plan_body compacted_summary task_logs discovery_notes review_logs
+  plan_body=$(echo "$comments_json" | jq -r '[.[] | select(.body | startswith("## 📋 Implementation Plan"))][-1].body // ""')
+  compacted_summary=$(echo "$comments_json" | jq -r '[.[] | select(.body | startswith("## 🧾 Compacted Summary"))][-1].body // ""')
+  task_logs=$(echo "$comments_json" | jq -r --argjson n "$max_task_logs" \
+    '[.[] | select(.body | startswith("## 📝 Task Log:")) | .body][-1 * $n:] | join("\n\n---\n\n")')
+  discovery_notes=$(echo "$comments_json" | jq -r --argjson n "$max_discovery_notes" \
+    '[.[] | select(.body | startswith("## 🔍 Discovery Note")) | .body][-1 * $n:] | join("\n\n---\n\n")')
+  review_logs=$(echo "$comments_json" | jq -r --argjson n "$max_review_logs" \
+    '[.[] | select(.body | startswith("## 🔎 Code Review:")) | .body][-1 * $n:] | join("\n\n---\n\n")')
+
+  local bundle="### Implementation Plan Snapshot
+${plan_body:-No implementation plan comment found.}"
+
+  local prefer_lower
+  prefer_lower=$(echo "$prefer_compacted" | tr '[:upper:]' '[:lower:]')
+  if [ "$prefer_lower" = "true" ] && [ -n "$compacted_summary" ]; then
+    bundle="${bundle}
+
+### Latest Compacted Summary (Preferred)
+${compacted_summary}"
+  fi
+
+  bundle="${bundle}
+
+### Recent Task Logs
+${task_logs:-No recent task logs found.}
+
+### Recent Discovery Notes
+${discovery_notes:-No recent discovery notes found.}
+
+### Recent Review Logs
+${review_logs:-No recent review logs found.}"
+
+  echo "$bundle"
+}
+
+# Update quality.execution retry counters after each authoritative outcome.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - task id
+#   $3 - outcome ("pass"|"retry"|"blocked")
+#
+# Output: current quality.execution object
+update_execution_retry_counters() {
+  local prd_file="${1:-prd.json}"
+  local task_id="$2"
+  local outcome="$3"
+
+  jq --arg task_id "$task_id" --arg outcome "$outcome" '
+    .quality.execution = ((.quality.execution // {
+      "consecutiveRetries": 0,
+      "currentTaskId": null,
+      "currentTaskRetryStreak": 0,
+      "lastReplanAt": null,
+      "lastReplanReason": null
+    }) | (
+      if ($outcome == "pass") then
+        .consecutiveRetries = 0 |
+        .currentTaskId = $task_id |
+        .currentTaskRetryStreak = 0
+      else
+        .consecutiveRetries = ((.consecutiveRetries // 0) + 1) |
+        .currentTaskRetryStreak = (
+          if (.currentTaskId == $task_id) then ((.currentTaskRetryStreak // 0) + 1)
+          else 1
+          end
+        ) |
+        .currentTaskId = $task_id
+      end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+  jq -c '.quality.execution' "$prd_file"
+}
+
+# Return stale-plan trigger reason when retry counters exceed thresholds.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - same-task threshold
+#   $3 - consecutive threshold
+#
+# Output: reason string (empty when no trigger)
+should_trigger_stale_plan() {
+  local prd_file="${1:-prd.json}"
+  local same_task_threshold="${2:-2}"
+  local consecutive_threshold="${3:-4}"
+
+  jq -r --argjson same "$same_task_threshold" --argjson consecutive "$consecutive_threshold" '
+    (.quality.execution.currentTaskRetryStreak // 0) as $same_count |
+    (.quality.execution.consecutiveRetries // 0) as $consecutive_count |
+    if $same_count >= $same then
+      ("same task retries reached " + ($same_count | tostring))
+    elif $consecutive_count >= $consecutive then
+      ("consecutive retries reached " + ($consecutive_count | tostring))
+    else
+      ""
+    end
+  ' "$prd_file" 2>/dev/null || echo ""
+}
+
+# Mark prd.json as requiring replan and record reason.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - reason
+mark_replan_required() {
+  local prd_file="${1:-prd.json}"
+  local reason="$2"
+  local now_ts
+  now_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  jq --arg reason "$reason" --arg now_ts "$now_ts" '
+    .debugState.status = "replan_required" |
+    .quality.execution.lastReplanAt = $now_ts |
+    .quality.execution.lastReplanReason = $reason |
+    .quality.execution.consecutiveRetries = 0 |
+    .quality.execution.currentTaskRetryStreak = 0 |
+    .quality.execution.currentTaskId = null
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Discovered-Task Auto-Enqueue
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -249,6 +862,7 @@ compute_task_fingerprint() {
 #   $5 - discovered tasks JSON array (compact JSON string)
 #        Each element: {"title":"...","description":"...","acceptanceCriteria":[...],"verifyCommands":[...],"dependsOn":[...]}
 #   $6 - issue number
+#   $7 - discovery source tag (default: "task_log")
 #
 # Side effects: modifies prd.json in place, commits the change
 enqueue_discovered_tasks() {
@@ -258,6 +872,7 @@ enqueue_discovered_tasks() {
   local parent_priority="$4"
   local discovered_json="$5"
   local issue_number="$6"
+  local discovery_source="${7:-task_log}"
 
   if [ -z "$discovered_json" ] || [ "$discovered_json" = "[]" ] || [ "$discovered_json" = "null" ]; then
     return 0
@@ -351,6 +966,7 @@ enqueue_discovered_tasks() {
        --argjson verify "$d_verify_json" \
        --argjson depends "$d_depends_json" \
        --arg parent_uid "$parent_uid" \
+       --arg discovery_source "$discovery_source" \
        '.userStories += [{
          "id": $id,
          "uid": $uid,
@@ -361,7 +977,7 @@ enqueue_discovered_tasks() {
          "files": [],
          "dependsOn": $depends,
          "discoveredFrom": $parent_uid,
-         "discoverySource": "task_log",
+         "discoverySource": $discovery_source,
          "acceptanceCriteria": $criteria,
          "verifyCommands": $verify,
          "passes": false,
@@ -383,6 +999,322 @@ enqueue_discovered_tasks() {
   fi
 
   return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Review Event Extraction and State Management
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Extract review JSON event blocks from issue comments.
+# Parses only fenced json code blocks under '### Review Event JSON' headings.
+#
+# Args:
+#   $1 - raw issue comments text
+#
+# Output: one JSON review event object per line (compact)
+extract_review_events_from_issue_comments() {
+  local comments="$1"
+  local in_event_section=0
+  local in_json_block=0
+  local json_buffer=""
+
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '### Review Event JSON'; then
+      in_event_section=1
+      in_json_block=0
+      json_buffer=""
+      continue
+    fi
+
+    if [ "$in_event_section" -eq 1 ]; then
+      if echo "$line" | grep -qE '^\s*```json\s*$'; then
+        in_json_block=1
+        json_buffer=""
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ] && echo "$line" | grep -qE '^\s*```\s*$'; then
+        if [ -n "$json_buffer" ]; then
+          if echo "$json_buffer" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+            local event_type
+            event_type=$(echo "$json_buffer" | jq -r '.type // ""' 2>/dev/null)
+            if [ "$event_type" = "review_log" ]; then
+              echo "$json_buffer"
+            fi
+          fi
+        fi
+        in_json_block=0
+        in_event_section=0
+        continue
+      fi
+
+      if [ "$in_json_block" -eq 1 ]; then
+        json_buffer="${json_buffer}${line}"
+        continue
+      fi
+
+      if echo "$line" | grep -qE '^#{1,4} |^---'; then
+        in_event_section=0
+        in_json_block=0
+        json_buffer=""
+      fi
+    fi
+  done <<< "$comments"
+}
+
+# Verify that a review log with Review Event JSON was posted to GitHub.
+#
+# Args:
+#   $1 - issue number
+#   $2 - review scope label (e.g., US-003 or FINAL)
+#   $3 - reviewed commit hash (optional; if provided must match)
+#
+# Output: verified review event JSON object, or empty
+# Returns: 0 if verified, 1 otherwise
+verify_review_log_on_github() {
+  local issue_number="$1"
+  local scope_label="$2"
+  local reviewed_commit="$3"
+
+  local recent_comments
+  recent_comments=$(gh issue view "$issue_number" --json comments \
+    --jq '.comments[-30:][] | @json' 2>/dev/null || echo "")
+
+  if [ -z "$recent_comments" ]; then
+    return 1
+  fi
+
+  local review_event=""
+  while IFS= read -r raw_comment; do
+    [ -z "$raw_comment" ] && continue
+    local c_body
+    c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+
+    if echo "$c_body" | grep -q "## 🔎 Code Review: ${scope_label}"; then
+      local extracted
+      extracted=$(extract_review_events_from_issue_comments "$c_body" 2>/dev/null | head -1)
+      if [ -z "$extracted" ]; then
+        continue
+      fi
+
+      local extracted_commit
+      extracted_commit=$(echo "$extracted" | jq -r '.reviewedCommit // ""' 2>/dev/null)
+      if [ -n "$reviewed_commit" ] && [ "$reviewed_commit" != "$extracted_commit" ]; then
+        continue
+      fi
+
+      review_event="$extracted"
+    fi
+  done <<< "$recent_comments"
+
+  if [ -z "$review_event" ]; then
+    return 1
+  fi
+
+  echo "$review_event"
+  return 0
+}
+
+# Ingest findings from a single review event into prd.json quality state.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - review event JSON object (compact)
+#   $3 - issue number
+#
+# Output: integer count of new findings ingested
+ingest_review_findings_into_prd() {
+  local prd_file="${1:-prd.json}"
+  local review_event="$2"
+  local issue_number="$3"
+
+  if [ -z "$review_event" ] || [ "$review_event" = "null" ]; then
+    echo "0"
+    return 0
+  fi
+
+  local findings_count
+  findings_count=$(echo "$review_event" | jq '.findings | length' 2>/dev/null || echo "0")
+  if [ "$findings_count" -eq 0 ]; then
+    echo "0"
+    return 0
+  fi
+
+  local ingested=0
+  local review_id scope parent_task_id parent_task_uid reviewed_commit event_ts
+  review_id=$(echo "$review_event" | jq -r '.reviewId // ""' 2>/dev/null)
+  scope=$(echo "$review_event" | jq -r '.scope // "task"' 2>/dev/null)
+  parent_task_id=$(echo "$review_event" | jq -r '.parentTaskId // ""' 2>/dev/null)
+  parent_task_uid=$(echo "$review_event" | jq -r '.parentTaskUid // ""' 2>/dev/null)
+  reviewed_commit=$(echo "$review_event" | jq -r '.reviewedCommit // ""' 2>/dev/null)
+  event_ts=$(echo "$review_event" | jq -r '.ts // ""' 2>/dev/null)
+
+  local i=0
+  while [ "$i" -lt "$findings_count" ]; do
+    local finding finding_id key is_processed
+    finding=$(echo "$review_event" | jq -c --argjson idx "$i" '.findings[$idx]')
+    finding_id=$(echo "$finding" | jq -r '.id // ""' 2>/dev/null)
+    if [ -z "$finding_id" ] || [ -z "$review_id" ]; then
+      i=$((i + 1))
+      continue
+    fi
+
+    key="${review_id}:${finding_id}"
+    is_processed=$(jq -r --arg key "$key" '.quality.processedReviewKeys // [] | index($key) != null' "$prd_file" 2>/dev/null || echo "false")
+    if [ "$is_processed" = "true" ]; then
+      i=$((i + 1))
+      continue
+    fi
+
+    jq --arg key "$key" \
+       --arg review_id "$review_id" \
+       --arg finding_id "$finding_id" \
+       --arg scope "$scope" \
+       --arg parent_task_id "$parent_task_id" \
+       --arg parent_task_uid "$parent_task_uid" \
+       --arg reviewed_commit "$reviewed_commit" \
+       --arg issue_number "$issue_number" \
+       --arg event_ts "$event_ts" \
+       --argjson finding "$finding" \
+       '.quality.processedReviewKeys += [$key] |
+        .quality.findings += [{
+          "key": $key,
+          "reviewId": $review_id,
+          "findingId": $finding_id,
+          "issue": ($issue_number | tonumber),
+          "scope": $scope,
+          "parentTaskId": (if $parent_task_id == "" then null else $parent_task_id end),
+          "parentTaskUid": (if $parent_task_uid == "" then null else $parent_task_uid end),
+          "reviewedCommit": (if $reviewed_commit == "" then null else $reviewed_commit end),
+          "severity": ($finding.severity // "medium"),
+          "confidence": ($finding.confidence // 0),
+          "category": ($finding.category // "adherence"),
+          "title": ($finding.title // ""),
+          "description": ($finding.description // ""),
+          "evidence": ($finding.evidence // []),
+          "suggestedTask": ($finding.suggestedTask // null),
+          "status": "open",
+          "createdAt": (if $event_ts == "" then (now | todateiso8601) else $event_ts end),
+          "updatedAt": (if $event_ts == "" then (now | todateiso8601) else $event_ts end),
+          "enqueuedTaskIds": []
+        }]' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+
+    ingested=$((ingested + 1))
+    i=$((i + 1))
+  done
+
+  echo "$ingested"
+  return 0
+}
+
+# Build the list of review findings that are eligible for auto-enqueue.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#
+# Output: JSON array of finding objects
+build_enqueuable_review_tasks() {
+  local prd_file="${1:-prd.json}"
+  jq -c '
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    (.quality.reviewPolicy.minConfidenceForAutoEnqueue // 0.75) as $minConf |
+    [
+      (.quality.findings // [])[] |
+      select(.status == "open") |
+      select((.severity // "" | ascii_downcase) as $sev | any($autoSev[]; ascii_downcase == $sev)) |
+      select((.confidence // 0) >= $minConf) |
+      select(.suggestedTask != null and (.suggestedTask.title // "") != "")
+    ]
+  ' "$prd_file" 2>/dev/null || echo "[]"
+}
+
+# Mark findings as enqueued after corresponding tasks are inserted.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - JSON array of finding keys
+#   $3 - optional enqueued task id (single) to append
+mark_enqueued_findings() {
+  local prd_file="${1:-prd.json}"
+  local finding_keys_json="${2:-[]}"
+  local enqueued_task_id="${3:-}"
+
+  if [ -z "$finding_keys_json" ] || [ "$finding_keys_json" = "[]" ]; then
+    return 0
+  fi
+
+  jq --argjson keys "$finding_keys_json" --arg task_id "$enqueued_task_id" '
+    .quality.findings = ((.quality.findings // []) | map(
+      if (.key as $k | ($keys | index($k) != null)) then
+        .status = "enqueued" |
+        .updatedAt = (now | todateiso8601) |
+        .enqueuedTaskIds = (
+          if ($task_id == "") then (.enqueuedTaskIds // [])
+          else ((.enqueuedTaskIds // []) + [$task_id] | unique)
+          end
+        )
+      else . end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Reconcile enqueued findings against code_review tasks in prd.json.
+# If all mapped code_review tasks for a finding have passed, mark it resolved.
+reconcile_review_findings() {
+  local prd_file="${1:-prd.json}"
+  jq '
+    . as $root |
+    .quality.findings = ((.quality.findings // []) | map(
+      . as $finding |
+      if ($finding.status == "enqueued" or $finding.status == "open") and ($finding.key // "") != "" then
+        (
+          [
+            $root.userStories[]? |
+            select(.discoverySource == "code_review") |
+            select((.description // "") | contains("Review Finding Key: " + ($finding.key)))
+          ] as $tasks |
+          if ($tasks | length) == 0 then $finding
+          elif (any($tasks[]; .passes == true)) then $finding | .status = "resolved" | .updatedAt = (now | todateiso8601)
+          else $finding | .status = "enqueued"
+          end
+        )
+      else $finding end
+    ))
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Return count of open blocking findings (critical/high severities).
+count_open_blocking_review_findings() {
+  local prd_file="${1:-prd.json}"
+  jq -r '
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    [
+      (.quality.findings // [])[] |
+      select((.status // "open") == "open") |
+      select((.severity // "" | ascii_downcase) as $sev | any($autoSev[]; ascii_downcase == $sev))
+    ] | length
+  ' "$prd_file" 2>/dev/null || echo "0"
+}
+
+# Mark final review state in quality metadata.
+#
+# Args:
+#   $1 - path to prd.json (default: "prd.json")
+#   $2 - status: pending|running|passed|failed
+#   $3 - reviewed commit hash (optional)
+#   $4 - review id (optional)
+mark_final_review_status() {
+  local prd_file="${1:-prd.json}"
+  local status="$2"
+  local reviewed_commit="$3"
+  local review_id="$4"
+
+  jq --arg status "$status" --arg reviewed_commit "$reviewed_commit" --arg review_id "$review_id" '
+    .quality.finalReview.status = $status |
+    .quality.finalReview.reviewedCommit = (if $reviewed_commit == "" then null else $reviewed_commit end) |
+    .quality.finalReview.lastReviewId = (if $review_id == "" then .quality.finalReview.lastReviewId else $review_id end) |
+    .quality.finalReview.updatedAt = (now | todateiso8601)
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -734,7 +1666,7 @@ ${updated_wisp}
 # and that the taskUid in the comment is correct. If UID mismatches,
 # patches the comment in-place via gh api.
 #
-# This checks durable GitHub state, NOT the agent's stdout — proving the
+# This checks durable GitHub state, NOT Claude's stdout — proving the
 # comment was actually posted, not just emitted in model output.
 #
 # Args:

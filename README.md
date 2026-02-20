@@ -247,6 +247,7 @@ This workflow uses the **Ralph Loop** pattern for autonomous implementation. Mem
 | `## 🔍 Discovery Note` | Patterns/learnings for future iterations |
 | `## 🧾 Compacted Summary` | Periodic summary of recent task logs (every 5) |
 | `## 🪶 Wisp` | Ephemeral context hint with expiration |
+| `## 🔁 Replan Checkpoint` | Retry-stall checkpoint requesting quick re-plan |
 | `## 🧪 Testing Checkpoint` | Request user testing |
 | `## 🔧 Debug Session` | Debug attempt |
 | `## ✅ Debug Fix Applied` | Debug fix verified |
@@ -319,7 +320,7 @@ Every `## 📝 Task Log` comment includes a machine-readable `### Event JSON` se
 ````markdown
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
 ```
 ````
 
@@ -344,6 +345,36 @@ During implementation, tasks may discover additional work needed. These **discov
 4. `prd.json` is committed before the next task selection
 
 Duplicate discovered tasks (matching fingerprint) are silently skipped and noted in the task log.
+
+## 🛡️ Execution Hardening (Warn → Enforce)
+
+The loop now computes canonical task outcome in the orchestrator:
+
+1. `verifyCommands` are re-run authoritatively by the loop runner.
+2. `maxTaskAttempts` is enforced when selecting executable tasks.
+3. Search evidence from Event JSON (`search.queries`) is validated.
+4. Added code lines are scanned for placeholder patterns.
+5. Stale retry patterns trigger a replan checkpoint (`debugState.status = "replan_required"`).
+
+`execution.gateMode` in `.issueloop.config.json` controls guard behavior:
+
+- `warn` (default): guard violations are logged, task can still pass if verify passes.
+- `enforce`: guard violations fail the task.
+
+Key execution config (defaults):
+
+```json
+{
+  "execution": {
+    "gateMode": "warn",
+    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80},
+    "searchEvidence": {"required": true, "minQueries": 2},
+    "placeholder": {"enabled": true},
+    "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 2, "consecutiveRetryThreshold": 4},
+    "context": {"preferCompactedSummary": true, "maxTaskLogs": 8, "maxDiscoveryNotes": 6, "maxReviewLogs": 4}
+  }
+}
+```
 
 ## 🧾 Compaction Summaries
 

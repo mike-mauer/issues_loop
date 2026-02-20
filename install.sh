@@ -125,7 +125,7 @@ if [ -f "$SCRIPT_DIR/.claude/rules/github-issue-workflow.md" ]; then
     # Copy config file
     if [ -f "$SCRIPT_DIR/.issueloop.config.json" ]; then
         cp "$SCRIPT_DIR/.issueloop.config.json" "$TARGET_DIR/.issueloop.config.json"
-        echo "✅ Configuration file copied"
+        echo "✅ Configuration file copied (includes execution hardening defaults)"
     fi
 
     # Copy issue template

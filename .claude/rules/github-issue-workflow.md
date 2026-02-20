@@ -73,6 +73,7 @@ Issues progress through these labels:
 | `## 🔍 Discovery Note` | Patterns/learnings for future tasks | When patterns discovered |
 | `## 🧾 Compacted Summary` | Periodic summary of recent task logs | Every N task logs (default 5) |
 | `## 🪶 Wisp` | Ephemeral context hint with expiration | During task execution |
+| `## 🔁 Replan Checkpoint` | Retry-stall checkpoint | When stale retry thresholds are hit |
 | `## 🧪 Testing Checkpoint` | Request manual testing | All tasks pass |
 | `## 🔧 Debug Session` | Document debug attempt | User reports issue |
 | `## ✅ Debug Fix Applied` | Document successful fix | Debug fix verified |
@@ -108,7 +109,7 @@ Issues progress through these labels:
 
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"discovered":[],"ts":"2026-02-10T18:30:00Z"}
 ```
 ```
 
@@ -127,6 +128,7 @@ The `### Event JSON` section is **required** in every task log comment. It conta
 | `attempt` | number | Attempt number for this task |
 | `commit` | string | Git commit hash (empty string if failed) |
 | `verify` | object | `{ "passed": [...], "failed": [...] }` — verify command results |
+| `search` | object | Optional evidence block: `{ "queries": [...], "filesInspected": [...] }` |
 | `discovered` | array | Discovered task objects to auto-enqueue (empty array if none) |
 | `ts` | string | ISO 8601 timestamp |
 
@@ -139,6 +141,19 @@ The loop parser uses a **two-phase extraction strategy**:
 2. **Legacy markdown fallback:** If no `### Event JSON` heading or fenced block is found (e.g., for task logs written before this format was introduced), fall back to parsing the human-readable markdown sections (`**Status:**`, `**Attempt:**`, `**Commit:**`, etc.).
 
 This fallback ensures backward compatibility with existing task log comments that do not include the Event JSON block.
+
+### Execution Hardening Gates
+
+The loop enforces quality in the orchestrator, not the model reply:
+
+1. **Authoritative verification:** `verifyCommands` are executed by the loop script after each task.
+2. **Gate mode:** `.issueloop.config.json.execution.gateMode` controls behavior:
+   - `warn` (default): gate violations are logged as warnings.
+   - `enforce`: gate violations fail the task.
+3. **Search evidence gate:** Event JSON should include `search.queries` (minimum count configurable via `execution.searchEvidence.minQueries`).
+4. **Placeholder gate:** Added code lines are scanned for placeholder patterns (configurable regex list + excludes).
+5. **Retry ceilings:** `maxTaskAttempts` is enforced by the orchestrator.
+6. **Stale-plan checkpoint:** repeated retries trigger `debugState.status = "replan_required"` and a `## 🔁 Replan Checkpoint` comment.
 
 ---
 

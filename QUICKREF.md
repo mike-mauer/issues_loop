@@ -62,6 +62,9 @@ Use `--quick` to skip scoping for issues already in progress.
 | `## 📋 Implementation Plan` | The plan |
 | `## 📝 Task Log: US-XXX` | Task result (pass/fail) |
 | `## 🔍 Discovery Note` | Learnings for future tasks |
+| `## 🧾 Compacted Summary` | Periodic context summary |
+| `## 🪶 Wisp` | Ephemeral context hint |
+| `## 🔁 Replan Checkpoint` | Retry-stall checkpoint |
 | `## 🧪 Testing Checkpoint` | Request user testing |
 | `## 🔧 Debug Session` | Debug attempt |
 | `## ✅ Debug Fix Applied` | Debug fix verified |
@@ -113,6 +116,17 @@ Works? → /issue close
 Issue? → Debug flow (3 attempts max)
 Later? → Pause, resume with /implement
 ```
+
+## 🛡️ Authoritative Gates
+
+- Task pass/fail is computed by orchestrator verify, not model `<result>` tags.
+- `maxTaskAttempts` is enforced from `.issueloop.config.json`.
+- Event JSON should include `search.queries` evidence.
+- Placeholder patterns in added lines are scanned each iteration.
+- `execution.gateMode`:
+  - `warn` (default): log violations, continue if verify passes.
+  - `enforce`: violations fail the task.
+- Repeated retries trigger `debugState.status = "replan_required"` and a `## 🔁 Replan Checkpoint` issue comment.
 
 ## 🧠 Fresh Context Rule
 

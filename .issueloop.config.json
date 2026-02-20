@@ -30,7 +30,8 @@
     "debugBlocked": "## 🚫 Debug Blocked",
     "finalReport": "## 📊 Final Report",
     "compactedSummary": "## 🧾 Compacted Summary",
-    "wisp": "## 🪶 Wisp"
+    "wisp": "## 🪶 Wisp",
+    "replanCheckpoint": "## 🔁 Replan Checkpoint"
   },
   "taskLogJsonVersion": 1,
   "summaryEveryNTaskLogs": 5,
@@ -52,5 +53,45 @@
     "task": "feat",
     "state": "chore",
     "debug": "fix"
+  },
+  "execution": {
+    "gateMode": "warn",
+    "verify": {
+      "commandTimeoutSeconds": 600,
+      "maxOutputLinesPerCommand": 80,
+      "globalVerifyCommands": [],
+      "securityVerifyCommands": [],
+      "runSecurityVerifyOnEveryTask": false
+    },
+    "searchEvidence": {
+      "required": true,
+      "minQueries": 2
+    },
+    "placeholder": {
+      "enabled": true,
+      "patterns": [
+        "TODO\\b",
+        "FIXME\\b",
+        "placeholder\\b",
+        "stub\\b",
+        "not implemented",
+        "mock implementation"
+      ],
+      "excludePathRegex": [
+        "(^|/)test(s)?/",
+        "\\.md$"
+      ]
+    },
+    "stalePlan": {
+      "enabled": true,
+      "sameTaskRetryThreshold": 2,
+      "consecutiveRetryThreshold": 4
+    },
+    "context": {
+      "preferCompactedSummary": true,
+      "maxTaskLogs": 8,
+      "maxDiscoveryNotes": 6,
+      "maxReviewLogs": 4
+    }
   }
 }

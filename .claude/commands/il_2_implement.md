@@ -18,9 +18,22 @@ For each task, the loop:
 1. Reads `prd.json` for task status
 2. Picks the next task where `passes: false`
 3. Implements the task
-4. Runs verification commands
-5. Updates `passes` status
+4. Runs authoritative verification commands
+5. Updates `passes`/`attempts` status in orchestrator
 6. Logs learnings to GitHub issue
+
+## Authoritative Execution Gates
+
+The loop now computes canonical outcome in the orchestrator:
+
+1. `verifyCommands` are executed by the loop runner (not trusted from model self-report).
+2. `maxTaskAttempts` is enforced when selecting executable tasks.
+3. Event JSON search evidence is validated (`search.queries`, configurable minimum).
+4. Added lines are scanned for placeholder patterns.
+5. `execution.gateMode` controls guard behavior:
+   - `warn` (default): guard violations are logged, task can still pass if verify passes.
+   - `enforce`: guard violations fail the task.
+6. Repeated retries trigger a stale-plan checkpoint (`debugState.status = "replan_required"`).
 
 ## Hybrid Review Lane (Findings-Only)
 
@@ -72,8 +85,8 @@ The implementation lane and review lane run in parallel:
 
 ### After EVERY Task (Pass or Fail), You MUST:
 
-- [ ] **Run ALL verify commands** - Execute every command in `verifyCommands`
-- [ ] **Update prd.json** - Set `passes`, increment `attempts`, set `lastAttempt`
+- [ ] **Run local checks when useful** - Orchestrator still runs authoritative verify suite
+- [ ] **Do NOT mutate pass/fail in prd.json manually** - Loop updates `passes/attempts/lastAttempt` authoritatively
 - [ ] **Commit changes** - Implementation commit (if passed) + prd.json commit
 - [ ] **Push to remote** - `git push` after commits
 - [ ] **MUST post task log to GitHub** - Use `gh issue comment` with the `## 📝 Task Log: US-XXX` format
@@ -97,11 +110,11 @@ Every task log comment **must** include an `### Event JSON` section containing a
 ```markdown
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["cmd1"],"failed":[]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["cmd1"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
 ```
 ```
 
-**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
+**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `search` (optional object with `queries` + `filesInspected`), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
 
 **Parser rule:** The loop extracts **only** fenced json blocks under `### Event JSON` headings. All other JSON in comments is ignored. If no Event JSON block is found, the loop falls back to legacy markdown parsing for backward compatibility.
 

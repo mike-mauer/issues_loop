@@ -1,13 +1,20 @@
 #!/bin/bash
 # test-enhancements.sh - Functional tests for beads-inspired enhancements
 #
-# Tests five critical behaviors of implement-loop-lib.sh:
+# Tests critical behaviors of implement-loop-lib.sh:
 #   1. JSON event extraction from fenced block + legacy fallback
 #   2. Discovered-task enqueue with fingerprint dedupe rejection
 #   3. Compaction trigger on 5th task log + counter reset
 #   4. Wisp expiration filtering (expired excluded, active included)
 #   5. Legacy prd.json backward compatibility (safe defaults)
 #   6. GitHub-authoritative task log verification + UID mismatch correction
+#   7. Review findings ingestion and routing
+#   8. Final review verification
+#   9. Authoritative verify suite execution
+#   10. Authoritative task state + attempt exhaustion helpers
+#   11. Search evidence validation
+#   12. Placeholder scanning on added lines only
+#   13. Context bundle compaction + stale-plan retry checkpoint helpers
 #
 # Usage: bash tests/test-enhancements.sh
 
@@ -799,6 +806,187 @@ export -f gh
 verified_final=$(verify_review_log_on_github 101 "FINAL" "abc999")
 assert_contains "$verified_final" '"reviewId":"rev_final_001"' "8b: verify_review_log_on_github finds matching FINAL review"
 assert_contains "$verified_final" '"reviewedCommit":"abc999"' "8b: verify_review_log_on_github validates reviewedCommit"
+
+# Reset gh mock to no-op
+gh() { :; }
+export -f gh
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 9: Authoritative Verify Suite
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 9: Authoritative Verify Suite ──"
+
+verify_mix=$(run_verify_suite '["echo ok","false"]' 30 20 '[]' '[]' 'false')
+verify_mix_failed=$(echo "$verify_mix" | jq -r '.failed | length')
+verify_mix_passed=$(echo "$verify_mix" | jq -r '.passed | length')
+verify_mix_all=$(echo "$verify_mix" | jq -r '.allPassed')
+assert_eq "$verify_mix_failed" "1" "9a: run_verify_suite captures failing command"
+assert_eq "$verify_mix_passed" "1" "9a: run_verify_suite captures passing command"
+assert_eq "$verify_mix_all" "false" "9a: allPassed false when any command fails"
+
+verify_security=$(run_verify_suite '["echo task"]' 30 20 '["echo global"]' '["echo security"]' 'true')
+verify_security_count=$(echo "$verify_security" | jq -r '.commands | length')
+assert_eq "$verify_security_count" "3" "9b: run_verify_suite includes task + global + security commands"
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 10: Authoritative Task State + Attempt Exhaustion
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 10: Task State + Attempt Exhaustion ──"
+
+cat > "$TEST_DIR/prd-state.json" << 'FIXTURE'
+{
+  "issueNumber": 55,
+  "userStories": [
+    {"id":"US-001","attempts":0,"passes":false,"lastAttempt":null}
+  ]
+}
+FIXTURE
+
+attempt_after_fail=$(update_task_state_authoritative "$TEST_DIR/prd-state.json" "US-001" "false")
+assert_eq "$attempt_after_fail" "1" "10a: update_task_state_authoritative increments attempts on fail"
+state_pass_10a=$(jq -r '.userStories[0].passes' "$TEST_DIR/prd-state.json")
+assert_eq "$state_pass_10a" "false" "10a: update_task_state_authoritative keeps passes=false on fail"
+
+if is_task_exhausted "$TEST_DIR/prd-state.json" "US-001" 1; then
+  pass "10b: is_task_exhausted returns true at threshold"
+else
+  fail "10b: is_task_exhausted returns true at threshold" "true" "false"
+fi
+
+attempt_after_pass=$(update_task_state_authoritative "$TEST_DIR/prd-state.json" "US-001" "true")
+assert_eq "$attempt_after_pass" "2" "10c: update_task_state_authoritative increments attempts on pass"
+state_pass_10c=$(jq -r '.userStories[0].passes' "$TEST_DIR/prd-state.json")
+assert_eq "$state_pass_10c" "true" "10c: update_task_state_authoritative sets passes=true on pass"
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 11: Search Evidence Validation
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 11: Search Evidence Validation ──"
+
+event_with_search='{"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/a.ts"]}}'
+search_ok=$(validate_search_evidence "$event_with_search" 2 "true")
+search_ok_flag=$(echo "$search_ok" | jq -r '.ok')
+assert_eq "$search_ok_flag" "true" "11a: validate_search_evidence passes with minimum queries met"
+
+search_missing=$(validate_search_evidence "{}" 2 "true")
+search_missing_flag=$(echo "$search_missing" | jq -r '.ok')
+assert_eq "$search_missing_flag" "false" "11b: validate_search_evidence fails when required evidence missing"
+
+search_advisory=$(validate_search_evidence '{"search":{"queries":["rg -n \"only\" src"]}}' 2 "false")
+search_advisory_flag=$(echo "$search_advisory" | jq -r '.ok')
+assert_eq "$search_advisory_flag" "true" "11c: validate_search_evidence is advisory when required=false"
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 12: Placeholder Scanning (Added Lines Only)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 12: Placeholder Scanning ──"
+
+# Use real git for this section (the global mock hides actual diffs).
+unset -f git
+
+SCAN_REPO="$TEST_DIR/scan-repo"
+mkdir -p "$SCAN_REPO"
+cd "$SCAN_REPO"
+git init -q
+git config user.email "tests@example.com"
+git config user.name "Tests"
+
+cat > src.js << 'SRC'
+export const value = 1;
+SRC
+cat > README.md << 'README'
+# Test
+README
+git add src.js README.md
+git commit -q -m "initial"
+
+cat > src.js << 'SRC'
+export const value = 1;
+// TODO: replace with real implementation
+SRC
+cat > README.md << 'README'
+# Test
+TODO: docs follow-up
+README
+
+placeholder_matches=$(scan_placeholder_patterns "WORKTREE" '["TODO\\b"]' '["\\.md$"]')
+placeholder_count=$(echo "$placeholder_matches" | jq -r 'length')
+assert_eq "$placeholder_count" "1" "12a: scan_placeholder_patterns reports TODO in code diff"
+placeholder_file=$(echo "$placeholder_matches" | jq -r '.[0].file')
+assert_eq "$placeholder_file" "src.js" "12b: scan_placeholder_patterns excludes markdown via regex"
+
+# Restore test working directory and git mock
+cd "$PROJECT_DIR"
+git() { :; }
+export -f git
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 13: Context Bundle + Stale Plan Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 13: Context Bundle + Stale Plan Helpers ──"
+
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+[{"body":"## 📋 Implementation Plan\nPlan body"},
+ {"body":"## 📝 Task Log: US-001\nOld log"},
+ {"body":"## 📝 Task Log: US-002\nNewer log"},
+ {"body":"## 📝 Task Log: US-003\nNewest log"},
+ {"body":"## 🔍 Discovery Note\nDiscovery A"},
+ {"body":"## 🔍 Discovery Note\nDiscovery B"},
+ {"body":"## 🔍 Discovery Note\nDiscovery C"},
+ {"body":"## 🔎 Code Review: US-002\nReview old"},
+ {"body":"## 🔎 Code Review: US-003\nReview new"},
+ {"body":"## 🧾 Compacted Summary\nCompacted history"}]
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+bundle=$(build_issue_context_bundle 99 "true" 2 2 1)
+assert_contains "$bundle" "Compacted history" "13a: build_issue_context_bundle includes latest compacted summary"
+assert_contains "$bundle" "US-002" "13b: build_issue_context_bundle includes capped recent task logs"
+assert_not_contains "$bundle" "US-001" "13c: build_issue_context_bundle omits task logs outside cap"
+assert_contains "$bundle" "Discovery C" "13d: build_issue_context_bundle includes latest discovery notes"
+assert_not_contains "$bundle" "Discovery A" "13e: build_issue_context_bundle omits old discovery notes outside cap"
+
+cat > "$TEST_DIR/prd-retry.json" << 'FIXTURE'
+{
+  "quality": {
+    "execution": {
+      "consecutiveRetries": 0,
+      "currentTaskId": null,
+      "currentTaskRetryStreak": 0,
+      "lastReplanAt": null,
+      "lastReplanReason": null
+    }
+  },
+  "debugState": {"status": "implementing"}
+}
+FIXTURE
+
+update_execution_retry_counters "$TEST_DIR/prd-retry.json" "US-010" "retry" >/dev/null
+update_execution_retry_counters "$TEST_DIR/prd-retry.json" "US-010" "retry" >/dev/null
+stale_reason=$(should_trigger_stale_plan "$TEST_DIR/prd-retry.json" 2 4)
+assert_contains "$stale_reason" "same task retries reached" "13f: should_trigger_stale_plan triggers on same-task threshold"
+
+mark_replan_required "$TEST_DIR/prd-retry.json" "$stale_reason"
+replan_status=$(jq -r '.debugState.status' "$TEST_DIR/prd-retry.json")
+assert_eq "$replan_status" "replan_required" "13g: mark_replan_required sets debugState.status"
+
+last_replan_reason=$(jq -r '.quality.execution.lastReplanReason' "$TEST_DIR/prd-retry.json")
+assert_contains "$last_replan_reason" "same task retries reached" "13h: mark_replan_required records reason"
 
 # Reset gh mock to no-op
 gh() { :; }
