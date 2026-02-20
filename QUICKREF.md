@@ -125,16 +125,21 @@ Later? → Pause, resume with /implement
 - Task pass/fail is computed by orchestrator verify, not model `<result>` tags.
 - `maxTaskAttempts` is enforced from `.issueloop.config.json`.
 - Verified task log Event JSON evidence is required by default.
+- Task sizing limits are enforced before execution (`execution.taskSizing`).
 - Event JSON should include `search.queries` evidence.
+- Event JSON can include `contextManifest` hash evidence and `testIntent` rationale.
 - Event JSON may include `patterns` for durable memory sync.
-- Placeholder patterns in added lines are scanned each iteration.
+- Placeholder patterns in added lines are scanned each iteration (regex + semantic checks).
 - UI tasks require browser verification event evidence.
+- Two-tier verify:
+  - Fast tier: task `verifyCommands` + `execution.verify.fastGlobalVerifyCommands`.
+  - Full tier: `execution.verify.fullGlobalVerifyCommands` on cadence + before testing checkpoint.
 - `execution.gateMode`:
   - `enforce` (default): violations fail the task.
   - `warn`: log violations, continue if verify passes.
 - Browser event schema (for required UI tasks):
   - `{"v":1,"type":"browser_verification","issue":42,"taskId":"US-003","taskUid":"tsk_...","tool":"playwright","status":"passed","artifacts":["screenshot:/abs/path.png"],"ts":"<ISO 8601>"}`
-- Repeated retries trigger `debugState.status = "replan_required"` and a `## 🔁 Replan Checkpoint` issue comment.
+- Repeated retries trigger `debugState.status = "replan_required"` and a `## 🔁 Replan Checkpoint` issue comment (auto-replan proposal/apply may run first when enabled).
 
 ## 🧠 Fresh Context Rule
 

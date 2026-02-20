@@ -1130,6 +1130,174 @@ export -f git gh
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TEST 15: Hardening Extensions (Config, Context Manifest, Replan, Test Intent)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 15: Hardening Extensions ──"
+
+cat > "$TEST_DIR/config-legacy.json" << 'FIXTURE'
+{
+  "execution": {
+    "verify": {
+      "globalVerifyCommands": ["npm run typecheck"]
+    }
+  }
+}
+FIXTURE
+
+load_execution_config "$TEST_DIR/config-legacy.json"
+assert_eq "$EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON" "[\"npm run typecheck\"]" "15a: load_execution_config maps legacy globalVerifyCommands -> fast tier"
+assert_eq "$EXEC_PROFILE" "greenfield" "15a: load_execution_config defaults profile to greenfield when unset"
+
+cat > "$TEST_DIR/config-brownfield.json" << 'FIXTURE'
+{
+  "execution": {
+    "profile": "brownfield"
+  }
+}
+FIXTURE
+
+load_execution_config "$TEST_DIR/config-brownfield.json"
+assert_eq "$EXEC_TASK_SIZING_ENABLED" "true" "15b: brownfield profile enables task sizing gate"
+assert_eq "$EXEC_CONTEXT_MANIFEST_ENABLED" "true" "15b: brownfield profile enables context manifest"
+assert_eq "$EXEC_REPLAN_AUTO_GENERATE_ON_STALE" "true" "15b: brownfield profile enables auto-replan on stale"
+
+oversized_check=$(validate_task_sizing '{"description":"One. Two. Three. Four.","acceptanceCriteria":["a","b"],"verifyCommands":["c"],"files":["f1"]}' "true" 3 10 6 12)
+oversized_ok=$(echo "$oversized_check" | jq -r '.ok')
+assert_eq "$oversized_ok" "false" "15c: validate_task_sizing fails oversized descriptions"
+rightsized_check=$(validate_task_sizing '{"description":"One. Two.","acceptanceCriteria":["a"],"verifyCommands":["c"],"files":["f1"]}' "true" 3 10 6 12)
+rightsized_ok=$(echo "$rightsized_check" | jq -r '.ok')
+assert_eq "$rightsized_ok" "true" "15c: validate_task_sizing passes right-sized task"
+
+manifest_one=$(build_context_manifest '{"id":"US-001"}' "issue body" "bundle" "gitlog" "src/a.ts" "wisp")
+manifest_two=$(build_context_manifest '{"id":"US-001"}' "issue body" "bundle" "gitlog" "src/a.ts" "wisp")
+hash_one=$(compute_context_manifest_hash "$manifest_one" "sha256")
+hash_two=$(compute_context_manifest_hash "$manifest_two" "sha256")
+assert_eq "$hash_one" "$hash_two" "15d: context manifest hash is deterministic"
+manifest_check_ok=$(validate_context_manifest_evidence "{\"contextManifest\":{\"hash\":\"$hash_one\",\"algorithm\":\"sha256\"}}" "$hash_one" "sha256" "true")
+manifest_ok=$(echo "$manifest_check_ok" | jq -r '.ok')
+assert_eq "$manifest_ok" "true" "15d: validate_context_manifest_evidence accepts matching hash"
+manifest_check_bad=$(validate_context_manifest_evidence '{"contextManifest":{"hash":"deadbeef","algorithm":"sha256"}}' "$hash_one" "sha256" "true")
+manifest_bad=$(echo "$manifest_check_bad" | jq -r '.ok')
+assert_eq "$manifest_bad" "false" "15d: validate_context_manifest_evidence rejects mismatched hash"
+
+cat > "$TEST_DIR/prd-full-verify.json" << 'FIXTURE'
+{
+  "quality": {
+    "execution": {
+      "tasksSinceFullVerify": 0,
+      "lastFullVerifyCommit": null,
+      "lastFullVerifyAt": null,
+      "lastAutoReplanAt": null,
+      "lastAutoReplanReason": null,
+      "lastAutoReplanResult": null
+    }
+  },
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Original task",
+      "description": "Original description",
+      "acceptanceCriteria": ["old"],
+      "verifyCommands": ["echo old"],
+      "dependsOn": [],
+      "files": [],
+      "passes": false,
+      "attempts": 2,
+      "lastAttempt": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
+FIXTURE
+
+increment_tasks_since_full_verify "$TEST_DIR/prd-full-verify.json"
+tsfv=$(jq -r '.quality.execution.tasksSinceFullVerify' "$TEST_DIR/prd-full-verify.json")
+assert_eq "$tsfv" "1" "15e: increment_tasks_since_full_verify increments counter"
+record_full_verify_success "$TEST_DIR/prd-full-verify.json" "abc1234"
+tsfv_reset=$(jq -r '.quality.execution.tasksSinceFullVerify' "$TEST_DIR/prd-full-verify.json")
+assert_eq "$tsfv_reset" "0" "15e: record_full_verify_success resets full verify counter"
+full_commit=$(jq -r '.quality.execution.lastFullVerifyCommit' "$TEST_DIR/prd-full-verify.json")
+assert_eq "$full_commit" "abc1234" "15e: record_full_verify_success stores commit"
+
+record_auto_replan_audit "$TEST_DIR/prd-full-verify.json" "same task retries reached 2" "applied_single"
+replan_result=$(jq -r '.quality.execution.lastAutoReplanResult' "$TEST_DIR/prd-full-verify.json")
+assert_eq "$replan_result" "applied_single" "15f: record_auto_replan_audit stores result"
+
+apply_auto_replan_single_task "$TEST_DIR/prd-full-verify.json" "US-001" '{"title":"Refined task","description":"New description","acceptanceCriteria":["new criterion"],"verifyCommands":["echo new"],"dependsOn":[],"files":["src/new.ts"]}'
+new_title=$(jq -r '.userStories[0].title' "$TEST_DIR/prd-full-verify.json")
+new_attempts=$(jq -r '.userStories[0].attempts' "$TEST_DIR/prd-full-verify.json")
+assert_eq "$new_title" "Refined task" "15g: apply_auto_replan_single_task updates task payload"
+assert_eq "$new_attempts" "0" "15g: apply_auto_replan_single_task resets attempts"
+
+git() {
+  if [ "$1" = "diff" ] || [ "$1" = "show" ]; then
+    cat << 'DIFFEOF'
+diff --git a/src/service.ts b/src/service.ts
++++ b/src/service.ts
+@@ -0,0 +1,3 @@
++return true;
++if (true) { doThing(); }
++const x = 1;
+DIFFEOF
+    return 0
+  fi
+  return 0
+}
+export -f git
+
+semantic_matches=$(scan_placeholder_patterns "WORKTREE" '[]' '[]' '{"enabled":true,"blockTrivialConstantReturns":true,"blockAlwaysTrueFalseConditionals":true}')
+assert_contains "$semantic_matches" "__SEMANTIC_TRIVIAL_CONSTANT_RETURN__" "15h: semantic placeholder scan catches trivial constant return"
+assert_contains "$semantic_matches" "__SEMANTIC_CONSTANT_CONDITIONAL__" "15h: semantic placeholder scan catches constant conditional"
+
+git() {
+  if [ "$1" = "show" ]; then
+    cat << 'GITEOF'
+tests/auth.spec.ts
+src/auth.ts
+GITEOF
+    return 0
+  fi
+  if [ "$1" = "diff" ]; then
+    cat << 'GITEOF'
+tests/auth.spec.ts
+src/auth.ts
+GITEOF
+    return 0
+  fi
+  return 0
+}
+export -f git
+
+test_files=$(detect_changed_test_files "abc1234")
+test_file_count=$(echo "$test_files" | jq -r 'length')
+assert_eq "$test_file_count" "1" "15i: detect_changed_test_files identifies test files"
+test_intent_ok=$(validate_test_intent_evidence '{"testIntent":[{"test":"tests/auth.spec.ts::expired token","why":"covers stale token regression"}]}')
+test_intent_ok_flag=$(echo "$test_intent_ok" | jq -r '.ok')
+assert_eq "$test_intent_ok_flag" "true" "15i: validate_test_intent_evidence accepts valid payload"
+test_intent_bad=$(validate_test_intent_evidence '{"testIntent":[{"test":"tests/auth.spec.ts::expired token"}]}')
+test_intent_bad_flag=$(echo "$test_intent_bad" | jq -r '.ok')
+assert_eq "$test_intent_bad_flag" "false" "15i: validate_test_intent_evidence rejects missing rationale"
+intent_patterns=$(convert_test_intent_to_patterns '{"testIntent":[{"test":"tests/auth.spec.ts::expired token","why":"covers stale token regression"}]}')
+intent_pattern_count=$(echo "$intent_patterns" | jq -r 'length')
+assert_eq "$intent_pattern_count" "1" "15i: convert_test_intent_to_patterns emits reusable pattern entries"
+
+REPLAN_OUTPUT='### Replan JSON
+```json
+[{"title":"Replan task","description":"Do one focused update.","acceptanceCriteria":["criterion"],"verifyCommands":["echo ok"],"dependsOn":[],"files":["src/a.ts"]}]
+```'
+extracted_replan=$(extract_replan_json_from_agent_output "$REPLAN_OUTPUT")
+assert_contains "$extracted_replan" '"title":"Replan task"' "15j: extract_replan_json_from_agent_output parses fenced replan JSON"
+validated_replan=$(validate_generated_replan_tasks "$extracted_replan" 1)
+validated_replan_count=$(echo "$validated_replan" | jq -r 'length')
+assert_eq "$validated_replan_count" "1" "15j: validate_generated_replan_tasks keeps valid bounded tasks"
+
+# Restore git/gh mocks
+git() { :; }
+gh() { :; }
+export -f git gh
+
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Results Summary
 # ═══════════════════════════════════════════════════════════════════════════════
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

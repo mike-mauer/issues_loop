@@ -322,6 +322,16 @@ Each task must include (see `references/planning-guide.md` for full details):
 ```
 ```
 
+#### Task Sizing Gate (Must Pass Before Approval)
+
+Plans must satisfy runtime sizing limits from `.issueloop.config.json`:
+- Description sentences: `<= 3`
+- Acceptance criteria count: `<= 10`
+- Verify commands count: `<= 6`
+- Files count: `<= 12`
+
+If any task exceeds limits, split the task before generating `prd.json`.
+
 #### Resuming Mid-Planning
 
 If returning to an issue mid-planning:

@@ -325,7 +325,7 @@ Every `## 📝 Task Log` comment includes a machine-readable `### Event JSON` se
 ````markdown
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"patterns":[{"statement":"When changing X, also update Y","scope":"src/module","files":["src/module/a.ts"],"confidence":0.9}],"discovered":[],"ts":"2026-02-10T18:30:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["npm run typecheck"],"failed":[]},"verifyTier":"fast","search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"contextManifest":{"hash":"abc...","algorithm":"sha256"},"testIntent":[{"test":"tests/auth.spec.ts::expired token","why":"prevents stale-loop auth regression"}],"patterns":[{"statement":"When changing X, also update Y","scope":"src/module","files":["src/module/a.ts"],"confidence":0.9}],"discovered":[],"ts":"2026-02-10T18:30:00Z"}
 ```
 ````
 
@@ -364,10 +364,13 @@ The loop now computes canonical task outcome in the orchestrator:
 1. `verifyCommands` are re-run authoritatively by the loop runner.
 2. `maxTaskAttempts` is enforced when selecting executable tasks.
 3. Verified task log Event JSON evidence is required.
-4. Search evidence from Event JSON (`search.queries`) is validated.
-5. Added code lines are scanned for placeholder patterns.
-6. UI tasks require browser verification evidence.
-7. Stale retry patterns trigger a replan checkpoint (`debugState.status = "replan_required"`).
+4. Task sizing is validated before execution (`execution.taskSizing`).
+5. Search evidence from Event JSON (`search.queries`) is validated.
+6. Context-manifest hash can be validated (`execution.contextManifest`).
+7. Added code lines are scanned for placeholder patterns (regex + semantic checks).
+8. Test intent can be required when tests change (`execution.testIntent`).
+9. UI tasks require browser verification evidence.
+10. Stale retry patterns trigger a replan checkpoint (`debugState.status = "replan_required"`), with optional auto-replan proposal/apply behavior.
 
 `execution.gateMode` in `.issueloop.config.json` controls guard behavior:
 
@@ -376,17 +379,27 @@ The loop now computes canonical task outcome in the orchestrator:
 
 Browser verification can hard-fail regardless of `gateMode` when `execution.browserVerification.hardFailWhenUnavailable` is true.
 
+Two-tier verify model:
+- **Fast tier:** task `verifyCommands` + `execution.verify.fastGlobalVerifyCommands` on every task.
+- **Full tier:** `execution.verify.fullGlobalVerifyCommands` on cadence (`fullRunEveryNPassedTasks`) and before testing checkpoint when enabled.
+- Persisted counters: `quality.execution.tasksSinceFullVerify`, `lastFullVerifyCommit`, `lastFullVerifyAt`.
+
 Key execution config (defaults):
 
 ```json
 {
   "execution": {
+    "profile": "brownfield",
     "gateMode": "enforce",
+    "taskSizing": {"enabled": true, "maxDescriptionSentences": 3, "maxAcceptanceCriteria": 10, "maxVerifyCommands": 6, "maxFiles": 12, "hardFailOnOversized": true},
+    "contextManifest": {"enabled": true, "algorithm": "sha256", "enforceHashMatch": false},
     "eventEvidence": {"required": true},
-    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80},
+    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80, "fastGlobalVerifyCommands": [], "fullGlobalVerifyCommands": [], "fullRunEveryNPassedTasks": 3, "runFullVerifyBeforeTestingCheckpoint": true},
     "searchEvidence": {"required": true, "minQueries": 2},
     "browserVerification": {"requiredForUiTasks": true, "hardFailWhenUnavailable": true, "allowedTools": ["playwright", "dev-browser"]},
-    "placeholder": {"enabled": true},
+    "placeholder": {"enabled": true, "semanticChecks": {"enabled": true, "blockTrivialConstantReturns": true, "blockAlwaysTrueFalseConditionals": true}},
+    "replan": {"autoGenerateOnStale": true, "autoApplyIfSingleTask": true, "maxGeneratedTasks": 6},
+    "testIntent": {"requiredWhenTestsChanged": true, "enforce": false},
     "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 2, "consecutiveRetryThreshold": 4},
     "context": {"preferCompactedSummary": true, "maxTaskLogs": 8, "maxDiscoveryNotes": 6, "maxReviewLogs": 4}
   }

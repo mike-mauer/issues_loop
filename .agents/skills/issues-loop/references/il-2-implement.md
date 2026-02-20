@@ -27,13 +27,26 @@ The loop now computes canonical outcome in the orchestrator:
 1. `verifyCommands` are executed by the loop runner (not trusted from model self-report).
 2. `maxTaskAttempts` is enforced when selecting executable tasks.
 3. Event evidence is required: a verified task log Event JSON must exist on GitHub.
-4. Event JSON search evidence is validated (`search.queries`, configurable minimum).
-5. Added lines are scanned for placeholder patterns.
-6. Browser verification is required for UI tasks and hard-fails if missing.
-7. `execution.gateMode` controls guard behavior:
+4. Task sizing is validated before execution (`execution.taskSizing` limits).
+5. Event JSON search evidence is validated (`search.queries`, configurable minimum).
+6. Context-manifest hash can be validated (`execution.contextManifest`).
+7. Added lines are scanned for placeholder patterns (regex + semantic checks).
+8. Test intent can be required when tests change (`execution.testIntent`).
+9. Browser verification is required for UI tasks and hard-fails if missing.
+10. `execution.gateMode` controls guard behavior:
    - `enforce` (default): guard violations fail the task.
    - `warn`: guard violations are logged, task can still pass if verify passes.
-8. Repeated retries trigger a stale-plan checkpoint (`debugState.status = "replan_required"`).
+11. Repeated retries trigger a stale-plan checkpoint (`debugState.status = "replan_required"`), with optional auto-replan proposals.
+
+### Two-Tier Verification
+
+- **Fast tier (every task):** task `verifyCommands` + `execution.verify.fastGlobalVerifyCommands`.
+- **Full tier (cadence):** `execution.verify.fullGlobalVerifyCommands` every `fullRunEveryNPassedTasks`.
+- **Checkpoint gate:** full tier runs before testing checkpoint when `runFullVerifyBeforeTestingCheckpoint=true`.
+- Loop state persists counters in `prd.json.quality.execution`:
+  - `tasksSinceFullVerify`
+  - `lastFullVerifyCommit`
+  - `lastFullVerifyAt`
 
 ## Usage
 ```
@@ -90,7 +103,7 @@ Every task log comment **must** include an `### Event JSON` section containing a
 ```markdown
 ### Event JSON
 ```json
-{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["cmd1"],"failed":[]},"search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"discovered":[],"ts":"2024-01-15T14:32:00Z"}
+{"v":1,"type":"task_log","issue":42,"taskId":"US-003","taskUid":"tsk_a1b2c3d4e5f6","status":"pass","attempt":2,"commit":"abc1234","verify":{"passed":["cmd1"],"failed":[]},"verifyTier":"fast","search":{"queries":["rg -n \"auth\" src","rg -n \"token\" src"],"filesInspected":["src/auth.ts"]},"contextManifest":{"hash":"abc...","algorithm":"sha256"},"testIntent":[{"test":"tests/auth.spec.ts::expired token","why":"prevents stale-loop auth regression"}],"discovered":[],"ts":"2024-01-15T14:32:00Z"}
 ```
 ```
 
@@ -99,7 +112,7 @@ Optional reusable pattern memory can be included:
 "patterns":[{"statement":"When changing X, also update Y","scope":"src/module","files":["src/module/a.ts"],"confidence":0.9}]
 ```
 
-**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `search` (optional object with `queries` + `filesInspected`), `patterns` (optional reusable pattern array), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
+**Schema fields:** `v` (version, always 1), `type` (always "task_log"), `issue`, `taskId`, `taskUid`, `status` ("pass"/"fail"), `attempt`, `commit` (hash or empty string), `verify` (passed/failed arrays), `verifyTier` (optional: `fast`/`full`), `search` (optional object with `queries` + `filesInspected`), `contextManifest` (optional hash evidence), `testIntent` (optional array of `{test, why}`), `patterns` (optional reusable pattern array), `discovered` (array of discovered task objects for auto-enqueue), `ts` (ISO 8601 timestamp).
 
 **Parser rule:** The loop extracts **only** fenced json blocks under `### Event JSON` headings. All other JSON in comments is ignored. If no Event JSON block is found, the loop falls back to legacy markdown parsing for backward compatibility.
 

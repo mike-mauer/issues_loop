@@ -51,16 +51,38 @@ EXEC_EVENT_REQUIRED="true"
 EXEC_VERIFY_TIMEOUT_SECONDS=600
 EXEC_VERIFY_MAX_OUTPUT_LINES=80
 EXEC_VERIFY_GLOBAL_COMMANDS_JSON='[]'
+EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON='[]'
+EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON='[]'
+EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS=0
+EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT="false"
 EXEC_VERIFY_SECURITY_COMMANDS_JSON='[]'
 EXEC_VERIFY_RUN_SECURITY_EACH="false"
 EXEC_SEARCH_REQUIRED="true"
 EXEC_SEARCH_MIN_QUERIES=2
+EXEC_PROFILE="greenfield"
+EXEC_TASK_SIZING_ENABLED="false"
+EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES=3
+EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA=10
+EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS=6
+EXEC_TASK_SIZING_MAX_FILES=12
+EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED="true"
+EXEC_CONTEXT_MANIFEST_ENABLED="false"
+EXEC_CONTEXT_MANIFEST_ALGORITHM="sha256"
+EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH="false"
 EXEC_BROWSER_REQUIRED_FOR_UI="true"
 EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE="true"
 EXEC_BROWSER_ALLOWED_TOOLS_JSON='["playwright","dev-browser"]'
+EXEC_REPLAN_AUTO_GENERATE_ON_STALE="false"
+EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK="true"
+EXEC_REPLAN_MAX_GENERATED_TASKS=6
 EXEC_PLACEHOLDER_ENABLED="true"
 EXEC_PLACEHOLDER_PATTERNS_JSON='[]'
 EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON='[]'
+EXEC_PLACEHOLDER_SEMANTIC_ENABLED="false"
+EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS="true"
+EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS="true"
+EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED="false"
+EXEC_TEST_INTENT_ENFORCE="false"
 EXEC_STALE_ENABLED="true"
 EXEC_STALE_SAME_TASK_THRESHOLD=2
 EXEC_STALE_CONSECUTIVE_THRESHOLD=4
@@ -111,6 +133,126 @@ commit_pattern_sync_if_changed() {
   fi
 }
 
+build_semantic_placeholder_config_json() {
+  jq -nc \
+    --arg enabled "$EXEC_PLACEHOLDER_SEMANTIC_ENABLED" \
+    --arg block_return "$EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS" \
+    --arg block_conditional "$EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS" \
+    '{
+      "enabled": ($enabled | ascii_downcase == "true"),
+      "blockTrivialConstantReturns": ($block_return | ascii_downcase == "true"),
+      "blockAlwaysTrueFalseConditionals": ($block_conditional | ascii_downcase == "true")
+    }'
+}
+
+post_replan_checkpoint() {
+  local task_id="$1"
+  local reason="$2"
+  local advisory_result="${3:-UNKNOWN}"
+  local verify_failed_count="${4:-0}"
+  local proposal_json="${5:-[]}"
+  local proposal_block=""
+
+  if [ -n "$proposal_json" ] && [ "$proposal_json" != "[]" ] && [ "$proposal_json" != "null" ]; then
+    proposal_block="
+
+### Proposed Task Refresh
+\`\`\`json
+${proposal_json}
+\`\`\`"
+  fi
+
+  local body="## 🔁 Replan Checkpoint
+
+**Task:** ${task_id}
+**Reason:** ${reason}
+**Action:** Run /il_1_plan ${ISSUE_NUMBER} --quick to refresh priorities/decomposition, then resume with /il_2_implement.
+
+Gate mode: ${EXEC_GATE_MODE}
+Advisory result: ${advisory_result}
+Authoritative verify failures: ${verify_failed_count}${proposal_block}"
+
+  gh issue comment "$ISSUE_NUMBER" --body "$body" 2>/dev/null || true
+}
+
+auto_generate_replan_tasks() {
+  local task_id="$1"
+  local task_uid="$2"
+  local task_json="$3"
+  local issue_body="$4"
+  local issue_memory_bundle="$5"
+  local verify_results="$6"
+  local stale_reason="$7"
+  local max_tasks="${8:-6}"
+
+  local prompt output parsed validated
+  prompt=$(cat <<EOF
+You are generating a task refresh for a stale implementation loop.
+
+Current task id: ${task_id}
+Current task uid: ${task_uid}
+Max generated tasks: ${max_tasks}
+
+Current task JSON:
+${task_json}
+
+Issue body:
+${issue_body}
+
+Issue memory bundle:
+${issue_memory_bundle}
+
+Latest authoritative verify results:
+${verify_results}
+
+Stale reason:
+${stale_reason}
+
+Return a focused replan as JSON only under this exact heading and fence:
+### Replan JSON
+\`\`\`json
+[
+  {
+    "title": "Short title",
+    "description": "2-3 sentence replacement task description",
+    "acceptanceCriteria": ["verifiable criterion"],
+    "verifyCommands": ["command"],
+    "dependsOn": [],
+    "files": []
+  }
+]
+\`\`\`
+
+Rules:
+- Return 1 to ${max_tasks} tasks.
+- No placeholder tasks.
+- Keep each task small enough for one iteration.
+- Do not include prose outside the JSON block.
+EOF
+)
+
+  set +e
+  output=$(echo "$prompt" | claude --print --dangerously-skip-permissions 2>&1)
+  local exit_code=$?
+  set -e
+  if [ $exit_code -ne 0 ] && [ -z "$output" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  parsed=$(extract_replan_json_from_agent_output "$output" 2>/dev/null || echo "")
+  if [ -z "$parsed" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  validated=$(validate_generated_replan_tasks "$parsed" "$max_tasks")
+  if [ -z "$validated" ] || [ "$validated" = "null" ]; then
+    validated="[]"
+  fi
+  echo "$validated"
+}
+
 # Build concise code-review prompt with strict read-only constraints
 build_review_prompt() {
   local scope_label="$1"
@@ -122,6 +264,8 @@ build_review_prompt() {
   local changed_files="$7"
   local issue_body="$8"
   local issue_comments="$9"
+  local task_json_render="$task_json"
+  [ -n "$task_json_render" ] || task_json_render='{}'
 
   cat <<EOF
 You are a code-review agent. Read-only analysis only.
@@ -138,7 +282,7 @@ Review scope:
 - Reviewed commit: ${reviewed_commit}
 
 Task JSON:
-${task_json:-{}}
+${task_json_render}
 
 Changed files:
 ${changed_files:-No changed files detected}
@@ -402,7 +546,12 @@ log "   Issue:      #$ISSUE_NUMBER"
 log "   Branch:     $BRANCH"
 log "   Max runs:   $MAX_ITERATIONS"
 log "   Max tries:  $MAX_TASK_ATTEMPTS"
+log "   Profile:    $EXEC_PROFILE"
 log "   Gate mode:  $EXEC_GATE_MODE"
+log "   Task size:  $EXEC_TASK_SIZING_ENABLED (hardFail=$EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED)"
+log "   Ctx hash:   $EXEC_CONTEXT_MANIFEST_ENABLED (enforce=$EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH)"
+log "   Verify tier: fast+full (cadence=$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS)"
+log "   Auto replan: $EXEC_REPLAN_AUTO_GENERATE_ON_STALE (singleApply=$EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK)"
 log ""
 log "$LINE_DOUBLE"
 
@@ -461,6 +610,35 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
         mark_final_review_status "$PRD_FILE" "passed" "$HEAD_COMMIT" "$FINAL_REVIEW_ID"
         commit_prd_if_changed "chore: final review passed (#$ISSUE_NUMBER)"
+      fi
+    fi
+
+    if [ "$(echo "$EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      FULL_VERIFY_COMMAND_COUNT=$(echo "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" | jq -r 'length' 2>/dev/null || echo "0")
+      if [ "$FULL_VERIFY_COMMAND_COUNT" -gt 0 ]; then
+        log "$ICON_INFO Running full verification gate before testing checkpoint..."
+        FULL_VERIFY_RESULTS=$(run_verify_suite \
+          '[]' \
+          "$EXEC_VERIFY_TIMEOUT_SECONDS" \
+          "$EXEC_VERIFY_MAX_OUTPUT_LINES" \
+          "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" \
+          '[]' \
+          "false")
+        FULL_VERIFY_PASSED=$(echo "$FULL_VERIFY_RESULTS" | jq -r '.allPassed // false' 2>/dev/null || echo "false")
+        if [ "$FULL_VERIFY_PASSED" != "true" ]; then
+          FULL_FAIL_COUNT=$(echo "$FULL_VERIFY_RESULTS" | jq -r '.failed | length' 2>/dev/null || echo "0")
+          mark_replan_required "$PRD_FILE" "full verify failed before testing checkpoint"
+          record_auto_replan_audit "$PRD_FILE" "full verify failed before testing checkpoint" "full_verify_failed"
+          commit_prd_if_changed "chore: full verify failed before testing checkpoint (#$ISSUE_NUMBER)"
+          post_replan_checkpoint "FINAL" "full verify failed before testing checkpoint" "UNKNOWN" "$FULL_FAIL_COUNT" "[]"
+          gh issue edit "$ISSUE_NUMBER" --add-label "$EXEC_LABEL_PLANNING" 2>/dev/null || true
+          git push 2>/dev/null || true
+          exit 1
+        fi
+
+        FULL_VERIFY_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+        record_full_verify_success "$PRD_FILE" "$FULL_VERIFY_COMMIT"
+        commit_prd_if_changed "chore: full verify passed before testing checkpoint (#$ISSUE_NUMBER)"
       fi
     fi
 
@@ -528,6 +706,31 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
   # 1. Get full task details from prd.json
   TASK_JSON=$(jq --arg id "$NEXT_TASK" '.userStories[] | select(.id == $id)' "$PRD_FILE")
+
+  TASK_SIZING_CHECK=$(validate_task_sizing \
+    "$TASK_JSON" \
+    "$EXEC_TASK_SIZING_ENABLED" \
+    "$EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES" \
+    "$EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA" \
+    "$EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS" \
+    "$EXEC_TASK_SIZING_MAX_FILES")
+  TASK_SIZING_OK=$(echo "$TASK_SIZING_CHECK" | jq -r '.ok // true' 2>/dev/null || echo "true")
+  if [ "$TASK_SIZING_OK" != "true" ]; then
+    TASK_SIZING_VIOLATIONS=$(echo "$TASK_SIZING_CHECK" | jq -r '.violations // [] | join("; ")' 2>/dev/null || echo "task sizing violations")
+    if [ "$(echo "$EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      log "$ICON_WARN Task sizing gate failed for $NEXT_TASK: $TASK_SIZING_VIOLATIONS"
+      mark_replan_required "$PRD_FILE" "task sizing exceeded limits for $NEXT_TASK"
+      record_auto_replan_audit "$PRD_FILE" "task sizing exceeded limits for $NEXT_TASK" "replan_required"
+      commit_prd_if_changed "chore: task sizing gate failed - replan required (#$ISSUE_NUMBER)"
+      post_replan_checkpoint "$NEXT_TASK" "task sizing exceeded limits for $NEXT_TASK" "UNKNOWN" "0" "[]"
+      gh issue edit "$ISSUE_NUMBER" --add-label "$EXEC_LABEL_PLANNING" 2>/dev/null || true
+      git push 2>/dev/null || true
+      exit 1
+    else
+      log "$ICON_WARN Task sizing advisory for $NEXT_TASK: $TASK_SIZING_VIOLATIONS"
+    fi
+  fi
+
   TASK_BROWSER_REQUIRED=$(task_requires_browser_verification "$TASK_JSON" "$EXEC_BROWSER_REQUIRED_FOR_UI")
   BROWSER_ALLOWED_TOOLS=$(echo "$EXEC_BROWSER_ALLOWED_TOOLS_JSON" | jq -r 'join(", ")' 2>/dev/null || echo "playwright, dev-browser")
   BROWSER_PROMPT=""
@@ -558,6 +761,28 @@ This task requires browser verification.
 
   # 5. Collect active (non-expired) wisps for ephemeral context
   ACTIVE_WISPS=$(collect_active_wisps "$ISSUE_NUMBER" 2>/dev/null || echo "")
+
+  CONTEXT_MANIFEST_JSON="{}"
+  CONTEXT_MANIFEST_HASH=""
+  CONTEXT_MANIFEST_PROMPT=""
+  EVENT_CONTEXT_MANIFEST_SAMPLE=""
+  if [ "$(echo "$EXEC_CONTEXT_MANIFEST_ENABLED" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    CONTEXT_MANIFEST_JSON=$(build_context_manifest \
+      "$TASK_JSON" \
+      "$ISSUE_BODY" \
+      "$ISSUE_MEMORY_BUNDLE" \
+      "$GIT_LOG" \
+      "$REPO_STRUCTURE" \
+      "$ACTIVE_WISPS")
+    CONTEXT_MANIFEST_HASH=$(compute_context_manifest_hash "$CONTEXT_MANIFEST_JSON" "$EXEC_CONTEXT_MANIFEST_ALGORITHM")
+    CONTEXT_MANIFEST_PROMPT="
+=== CONTEXT MANIFEST ===
+Algorithm: ${EXEC_CONTEXT_MANIFEST_ALGORITHM}
+Hash: ${CONTEXT_MANIFEST_HASH}
+You MUST echo this in Event JSON:
+\"contextManifest\":{\"hash\":\"${CONTEXT_MANIFEST_HASH}\",\"algorithm\":\"${EXEC_CONTEXT_MANIFEST_ALGORITHM}\"}"
+    EVENT_CONTEXT_MANIFEST_SAMPLE=",\"contextManifest\":{\"hash\":\"${CONTEXT_MANIFEST_HASH}\",\"algorithm\":\"${EXEC_CONTEXT_MANIFEST_ALGORITHM}\"}"
+  fi
 
   # Build prompt for Claude with gathered context
   PROMPT="You are executing a single task from the implementation loop.
@@ -590,6 +815,7 @@ Task UID: $TASK_UID
 
 === ACTIVE WISPS (ephemeral context hints) ===
 ${ACTIVE_WISPS:-No active wisps}
+${CONTEXT_MANIFEST_PROMPT}
 
 === INSTRUCTIONS ===
 1. Review the task details above (acceptanceCriteria, verifyCommands, files to modify)
@@ -616,7 +842,7 @@ the end of the task log comment. Format:
 \`\`\`
 ### Event JSON
 \\\`\\\`\\\`json
-{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"search\":{\"queries\":[\"rg -n \\\"pattern\\\" src\"],\"filesInspected\":[\"path/to/file\"]},\"patterns\":[{\"statement\":\"When changing X, also update Y\",\"scope\":\"src/module\",\"files\":[\"src/module/a.ts\"],\"confidence\":0.9}],\"discovered\":[],\"ts\":\"<ISO 8601>\"}
+{\"v\":1,\"type\":\"task_log\",\"issue\":$ISSUE_NUMBER,\"taskId\":\"$NEXT_TASK\",\"taskUid\":\"$TASK_UID\",\"status\":\"pass\",\"attempt\":<N>,\"commit\":\"<hash>\",\"verify\":{\"passed\":[...],\"failed\":[...]},\"verifyTier\":\"fast\",\"search\":{\"queries\":[\"rg -n \\\"pattern\\\" src\"],\"filesInspected\":[\"path/to/file\"]}${EVENT_CONTEXT_MANIFEST_SAMPLE},\"testIntent\":[{\"test\":\"tests/module.spec.ts::handles edge case\",\"why\":\"Prevents regression for stale retry path\"}],\"patterns\":[{\"statement\":\"When changing X, also update Y\",\"scope\":\"src/module\",\"files\":[\"src/module/a.ts\"],\"confidence\":0.9}],\"discovered\":[],\"ts\":\"<ISO 8601>\"}
 \\\`\\\`\\\`
 \`\`\`
 
@@ -671,15 +897,32 @@ Output guidance:
       log "$ICON_SUCCESS Discovered tasks enqueued"
     fi
 
+    ALL_NEW_PATTERNS_JSON='[]'
+
     NEW_PATTERNS_JSON=$(ingest_task_patterns_into_prd "$PRD_FILE" "$PARSED_EVENT" "$ISSUE_NUMBER" "$MEMORY_MAX_PATTERNS_PER_TASK")
     if [ -n "$NEW_PATTERNS_JSON" ] && [ "$NEW_PATTERNS_JSON" != "[]" ] && [ "$NEW_PATTERNS_JSON" != "null" ]; then
+      ALL_NEW_PATTERNS_JSON=$(echo "$ALL_NEW_PATTERNS_JSON" | jq -c --argjson incoming "$NEW_PATTERNS_JSON" '. + $incoming' 2>/dev/null || echo "$NEW_PATTERNS_JSON")
+    fi
+
+    TEST_INTENT_PATTERNS=$(convert_test_intent_to_patterns "$PARSED_EVENT")
+    if [ -n "$TEST_INTENT_PATTERNS" ] && [ "$TEST_INTENT_PATTERNS" != "[]" ] && [ "$TEST_INTENT_PATTERNS" != "null" ]; then
+      SYNTH_EVENT=$(echo "$PARSED_EVENT" | jq -c --argjson pats "$TEST_INTENT_PATTERNS" '.patterns = $pats' 2>/dev/null || echo "")
+      if [ -n "$SYNTH_EVENT" ]; then
+        NEW_TEST_INTENT_PATTERNS=$(ingest_task_patterns_into_prd "$PRD_FILE" "$SYNTH_EVENT" "$ISSUE_NUMBER" "$MEMORY_MAX_PATTERNS_PER_TASK")
+        if [ -n "$NEW_TEST_INTENT_PATTERNS" ] && [ "$NEW_TEST_INTENT_PATTERNS" != "[]" ] && [ "$NEW_TEST_INTENT_PATTERNS" != "null" ]; then
+          ALL_NEW_PATTERNS_JSON=$(echo "$ALL_NEW_PATTERNS_JSON" | jq -c --argjson incoming "$NEW_TEST_INTENT_PATTERNS" '. + $incoming' 2>/dev/null || echo "$ALL_NEW_PATTERNS_JSON")
+        fi
+      fi
+    fi
+
+    if [ -n "$ALL_NEW_PATTERNS_JSON" ] && [ "$ALL_NEW_PATTERNS_JSON" != "[]" ] && [ "$ALL_NEW_PATTERNS_JSON" != "null" ]; then
       SYNC_RESULT=$(sync_task_patterns_to_docs \
         "$PRD_FILE" \
         "$ISSUE_NUMBER" \
         "$NEXT_TASK" \
         "$TASK_UID" \
         "$(echo "$PARSED_EVENT" | jq -r '.commit // ""' 2>/dev/null)" \
-        "$NEW_PATTERNS_JSON" \
+        "$ALL_NEW_PATTERNS_JSON" \
         "$MEMORY_AUTO_SYNC_DOCS" \
         "$MEMORY_MIN_CONFIDENCE" \
         "$MEMORY_DOC_TARGETS_JSON" \
@@ -698,16 +941,50 @@ Output guidance:
   fi
 
   VERIFY_COMMANDS_JSON=$(echo "$TASK_JSON" | jq -c '.verifyCommands // []' 2>/dev/null || echo "[]")
-  VERIFY_RESULTS=$(run_verify_suite \
+  FAST_VERIFY_RESULTS=$(run_verify_suite \
     "$VERIFY_COMMANDS_JSON" \
     "$EXEC_VERIFY_TIMEOUT_SECONDS" \
     "$EXEC_VERIFY_MAX_OUTPUT_LINES" \
-    "$EXEC_VERIFY_GLOBAL_COMMANDS_JSON" \
+    "$EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON" \
     "$EXEC_VERIFY_SECURITY_COMMANDS_JSON" \
     "$EXEC_VERIFY_RUN_SECURITY_EACH")
+  FAST_VERIFY_PASSED=$(echo "$FAST_VERIFY_RESULTS" | jq -r '.allPassed // false' 2>/dev/null || echo "false")
+  FAST_VERIFY_FAILED_COUNT=$(echo "$FAST_VERIFY_RESULTS" | jq -r '.failed | length' 2>/dev/null || echo "0")
 
-  VERIFY_PASSED=$(echo "$VERIFY_RESULTS" | jq -r '.allPassed // false' 2>/dev/null || echo "false")
-  VERIFY_FAILED_COUNT=$(echo "$VERIFY_RESULTS" | jq -r '.failed | length' 2>/dev/null || echo "0")
+  FULL_VERIFY_RESULTS='{"commands":[],"passed":[],"failed":[],"allPassed":true}'
+  FULL_VERIFY_PASSED="true"
+  FULL_VERIFY_FAILED_COUNT=0
+  FULL_VERIFY_DUE="false"
+  TASKS_SINCE_FULL_VERIFY=$(jq -r '.quality.execution.tasksSinceFullVerify // 0' "$PRD_FILE")
+  FULL_VERIFY_COMMAND_COUNT=$(echo "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" | jq -r 'length' 2>/dev/null || echo "0")
+  if [ "$FULL_VERIFY_COMMAND_COUNT" -gt 0 ] && [ "$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS" -gt 0 ]; then
+    NEXT_FULL_COUNTER=$((TASKS_SINCE_FULL_VERIFY + 1))
+    if [ "$NEXT_FULL_COUNTER" -ge "$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS" ]; then
+      FULL_VERIFY_DUE="true"
+    fi
+  fi
+
+  if [ "$FAST_VERIFY_PASSED" = "true" ] && [ "$FULL_VERIFY_DUE" = "true" ]; then
+    log "$ICON_INFO Running full verification cadence for $NEXT_TASK..."
+    FULL_VERIFY_RESULTS=$(run_verify_suite \
+      '[]' \
+      "$EXEC_VERIFY_TIMEOUT_SECONDS" \
+      "$EXEC_VERIFY_MAX_OUTPUT_LINES" \
+      "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" \
+      '[]' \
+      "false")
+    FULL_VERIFY_PASSED=$(echo "$FULL_VERIFY_RESULTS" | jq -r '.allPassed // false' 2>/dev/null || echo "false")
+    FULL_VERIFY_FAILED_COUNT=$(echo "$FULL_VERIFY_RESULTS" | jq -r '.failed | length' 2>/dev/null || echo "0")
+  fi
+
+  VERIFY_PASSED="true"
+  if [ "$FAST_VERIFY_PASSED" != "true" ] || [ "$FULL_VERIFY_PASSED" != "true" ]; then
+    VERIFY_PASSED="false"
+  fi
+  VERIFY_FAILED_COUNT=$((FAST_VERIFY_FAILED_COUNT + FULL_VERIFY_FAILED_COUNT))
+  VERIFY_RESULTS=$(jq -nc --argjson fast "$FAST_VERIFY_RESULTS" --argjson full "$FULL_VERIFY_RESULTS" '
+    {"fast":$fast,"full":$full}
+  ')
   if [ "$VERIFY_FAILED_COUNT" -gt 0 ]; then
     log "$ICON_WARN Authoritative verification reported $VERIFY_FAILED_COUNT failing command(s)."
   fi
@@ -715,6 +992,18 @@ Output guidance:
   EVENT_OK="true"
   if [ "$(echo "$EXEC_EVENT_REQUIRED" | tr '[:upper:]' '[:lower:]')" = "true" ] && [ "$EVENT_VERIFIED" -ne 1 ]; then
     EVENT_OK="false"
+  fi
+
+  CONTEXT_MANIFEST_OK="true"
+  CONTEXT_MANIFEST_REASON=""
+  if [ "$(echo "$EXEC_CONTEXT_MANIFEST_ENABLED" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    CONTEXT_MANIFEST_CHECK=$(validate_context_manifest_evidence \
+      "$PARSED_EVENT" \
+      "$CONTEXT_MANIFEST_HASH" \
+      "$EXEC_CONTEXT_MANIFEST_ALGORITHM" \
+      "true")
+    CONTEXT_MANIFEST_OK=$(echo "$CONTEXT_MANIFEST_CHECK" | jq -r '.ok // false' 2>/dev/null || echo "false")
+    CONTEXT_MANIFEST_REASON=$(echo "$CONTEXT_MANIFEST_CHECK" | jq -r '.reason // ""' 2>/dev/null || echo "")
   fi
 
   BROWSER_EVENT_JSON=""
@@ -732,12 +1021,24 @@ Output guidance:
 
   PLACEHOLDER_MATCHES='[]'
   PLACEHOLDER_COUNT=0
+  SCAN_TARGET=$(echo "$PARSED_EVENT" | jq -r '.commit // empty' 2>/dev/null || echo "")
+  if [ -z "$SCAN_TARGET" ]; then
+    SCAN_TARGET="WORKTREE"
+  fi
+
+  TEST_CHANGED_FILES_JSON=$(detect_changed_test_files "$SCAN_TARGET")
+  TEST_CHANGED_COUNT=$(echo "$TEST_CHANGED_FILES_JSON" | jq -r 'length' 2>/dev/null || echo "0")
+  TEST_INTENT_OK="true"
+  TEST_INTENT_REASON=""
+  if [ "$(echo "$EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED" | tr '[:upper:]' '[:lower:]')" = "true" ] && [ "$TEST_CHANGED_COUNT" -gt 0 ]; then
+    TEST_INTENT_CHECK=$(validate_test_intent_evidence "$PARSED_EVENT")
+    TEST_INTENT_OK=$(echo "$TEST_INTENT_CHECK" | jq -r '.ok // false' 2>/dev/null || echo "false")
+    TEST_INTENT_REASON=$(echo "$TEST_INTENT_CHECK" | jq -r '.reason // ""' 2>/dev/null || echo "")
+  fi
+
   if [ "$(echo "$EXEC_PLACEHOLDER_ENABLED" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
-    SCAN_TARGET=$(echo "$PARSED_EVENT" | jq -r '.commit // empty' 2>/dev/null || echo "")
-    if [ -z "$SCAN_TARGET" ]; then
-      SCAN_TARGET="WORKTREE"
-    fi
-    PLACEHOLDER_MATCHES=$(scan_placeholder_patterns "$SCAN_TARGET" "$EXEC_PLACEHOLDER_PATTERNS_JSON" "$EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON")
+    SEMANTIC_PLACEHOLDER_CONFIG=$(build_semantic_placeholder_config_json)
+    PLACEHOLDER_MATCHES=$(scan_placeholder_patterns "$SCAN_TARGET" "$EXEC_PLACEHOLDER_PATTERNS_JSON" "$EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON" "$SEMANTIC_PLACEHOLDER_CONFIG")
     PLACEHOLDER_COUNT=$(echo "$PLACEHOLDER_MATCHES" | jq -r 'length' 2>/dev/null || echo "0")
   fi
 
@@ -748,6 +1049,14 @@ Output guidance:
       log "$ICON_WARN Event evidence gate failed: missing verified task log event on GitHub."
     else
       log "$ICON_WARN Event evidence advisory: missing verified task log event on GitHub."
+    fi
+  fi
+  if [ "$(echo "$EXEC_CONTEXT_MANIFEST_ENABLED" | tr '[:upper:]' '[:lower:]')" = "true" ] && [ "$CONTEXT_MANIFEST_OK" != "true" ]; then
+    if [ "$(echo "$EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      GUARD_FAIL_COUNT=$((GUARD_FAIL_COUNT + 1))
+      log "$ICON_WARN Context manifest gate failed: $CONTEXT_MANIFEST_REASON"
+    else
+      log "$ICON_WARN Context manifest advisory: $CONTEXT_MANIFEST_REASON"
     fi
   fi
   if [ "$SEARCH_OK" != "true" ]; then
@@ -774,6 +1083,14 @@ Output guidance:
       log "$ICON_WARN Browser verification advisory: missing valid browser verification event."
     fi
   fi
+  if [ "$TEST_CHANGED_COUNT" -gt 0 ] && [ "$TEST_INTENT_OK" != "true" ]; then
+    if [ "$(echo "$EXEC_TEST_INTENT_ENFORCE" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      GUARD_FAIL_COUNT=$((GUARD_FAIL_COUNT + 1))
+      log "$ICON_WARN Test intent gate failed: $TEST_INTENT_REASON"
+    else
+      log "$ICON_WARN Test intent advisory: $TEST_INTENT_REASON"
+    fi
+  fi
 
   CANONICAL_PASS="$VERIFY_PASSED"
   if [ "$(echo "$EXEC_GATE_MODE" | tr '[:upper:]' '[:lower:]')" = "enforce" ] && [ "$GUARD_FAIL_COUNT" -gt 0 ]; then
@@ -789,6 +1106,15 @@ Output guidance:
 
   if [ "$CANONICAL_PASS" = "true" ]; then
     update_execution_retry_counters "$PRD_FILE" "$NEXT_TASK" "pass" >/dev/null
+    if [ "$FULL_VERIFY_DUE" = "true" ]; then
+      PASS_COMMIT=$(echo "$PARSED_EVENT" | jq -r '.commit // ""' 2>/dev/null || echo "")
+      if [ -z "$PASS_COMMIT" ] || [ "$PASS_COMMIT" = "null" ]; then
+        PASS_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+      fi
+      record_full_verify_success "$PRD_FILE" "$PASS_COMMIT"
+    else
+      increment_tasks_since_full_verify "$PRD_FILE"
+    fi
     commit_prd_if_changed "chore: update prd.json - $NEXT_TASK passed (#$ISSUE_NUMBER)"
 
     log ""
@@ -822,19 +1148,55 @@ Output guidance:
     STALE_REASON=$(should_trigger_stale_plan "$PRD_FILE" "$EXEC_STALE_SAME_TASK_THRESHOLD" "$EXEC_STALE_CONSECUTIVE_THRESHOLD")
     if [ -n "$STALE_REASON" ]; then
       log "$ICON_WARN Stale-plan checkpoint triggered: $STALE_REASON"
+      if [ "$(echo "$EXEC_REPLAN_AUTO_GENERATE_ON_STALE" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+        AUTO_REPLAN_TASKS=$(auto_generate_replan_tasks \
+          "$NEXT_TASK" \
+          "$TASK_UID" \
+          "$TASK_JSON" \
+          "$ISSUE_BODY" \
+          "$ISSUE_MEMORY_BUNDLE" \
+          "$VERIFY_RESULTS" \
+          "$STALE_REASON" \
+          "$EXEC_REPLAN_MAX_GENERATED_TASKS")
+        AUTO_REPLAN_COUNT=$(echo "$AUTO_REPLAN_TASKS" | jq -r 'length' 2>/dev/null || echo "0")
+
+        if [ "$AUTO_REPLAN_COUNT" -eq 1 ] && [ "$(echo "$EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+          log "$ICON_INFO Auto-replan produced one replacement task. Applying in place for $NEXT_TASK."
+          REPLACEMENT_TASK=$(echo "$AUTO_REPLAN_TASKS" | jq -c '.[0]' 2>/dev/null || echo "{}")
+          apply_auto_replan_single_task "$PRD_FILE" "$NEXT_TASK" "$REPLACEMENT_TASK"
+          jq '.quality.execution.consecutiveRetries = 0 |
+              .quality.execution.currentTaskRetryStreak = 0 |
+              .quality.execution.currentTaskId = null' "$PRD_FILE" > tmp.$$.json && mv tmp.$$.json "$PRD_FILE"
+          record_auto_replan_audit "$PRD_FILE" "$STALE_REASON" "applied_single"
+          commit_prd_if_changed "chore: auto-replan applied replacement for $NEXT_TASK (#$ISSUE_NUMBER)"
+          post_replan_checkpoint "$NEXT_TASK" "$STALE_REASON (auto-applied single replacement)" "$ADVISORY_RESULT" "$VERIFY_FAILED_COUNT" "$AUTO_REPLAN_TASKS"
+          git push 2>/dev/null || true
+          continue
+        fi
+
+        if [ "$AUTO_REPLAN_COUNT" -gt 0 ]; then
+          mark_replan_required "$PRD_FILE" "$STALE_REASON"
+          record_auto_replan_audit "$PRD_FILE" "$STALE_REASON" "proposal_posted"
+          commit_prd_if_changed "chore: stale-plan auto-replan proposal posted (#$ISSUE_NUMBER)"
+          post_replan_checkpoint "$NEXT_TASK" "$STALE_REASON" "$ADVISORY_RESULT" "$VERIFY_FAILED_COUNT" "$AUTO_REPLAN_TASKS"
+          gh issue edit "$ISSUE_NUMBER" --add-label "$EXEC_LABEL_PLANNING" 2>/dev/null || true
+          git push 2>/dev/null || true
+          exit 1
+        fi
+
+        mark_replan_required "$PRD_FILE" "$STALE_REASON"
+        record_auto_replan_audit "$PRD_FILE" "$STALE_REASON" "generation_failed"
+        commit_prd_if_changed "chore: stale-plan checkpoint - replan required (#$ISSUE_NUMBER)"
+        post_replan_checkpoint "$NEXT_TASK" "$STALE_REASON" "$ADVISORY_RESULT" "$VERIFY_FAILED_COUNT" "[]"
+        gh issue edit "$ISSUE_NUMBER" --add-label "$EXEC_LABEL_PLANNING" 2>/dev/null || true
+        git push 2>/dev/null || true
+        exit 1
+      fi
+
       mark_replan_required "$PRD_FILE" "$STALE_REASON"
+      record_auto_replan_audit "$PRD_FILE" "$STALE_REASON" "manual_replan_required"
       commit_prd_if_changed "chore: stale-plan checkpoint - replan required (#$ISSUE_NUMBER)"
-
-      REPLAN_BODY="## 🔁 Replan Checkpoint
-
-**Task:** $NEXT_TASK
-**Reason:** $STALE_REASON
-**Action:** Run /il_1_plan $ISSUE_NUMBER --quick to refresh priorities/decomposition, then resume with /il_2_implement.
-
-Gate mode: $EXEC_GATE_MODE
-Advisory result: $ADVISORY_RESULT
-Authoritative verify failures: $VERIFY_FAILED_COUNT"
-      gh issue comment "$ISSUE_NUMBER" --body "$REPLAN_BODY" 2>/dev/null || true
+      post_replan_checkpoint "$NEXT_TASK" "$STALE_REASON" "$ADVISORY_RESULT" "$VERIFY_FAILED_COUNT" "[]"
       gh issue edit "$ISSUE_NUMBER" --add-label "$EXEC_LABEL_PLANNING" 2>/dev/null || true
       git push 2>/dev/null || true
       exit 1

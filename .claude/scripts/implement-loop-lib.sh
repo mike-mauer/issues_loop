@@ -256,7 +256,13 @@ initialize_missing_prd_fields() {
       "currentTaskId": null,
       "currentTaskRetryStreak": 0,
       "lastReplanAt": null,
-      "lastReplanReason": null
+      "lastReplanReason": null,
+      "tasksSinceFullVerify": 0,
+      "lastFullVerifyCommit": null,
+      "lastFullVerifyAt": null,
+      "lastAutoReplanAt": null,
+      "lastAutoReplanReason": null,
+      "lastAutoReplanResult": null
     }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
@@ -278,6 +284,30 @@ initialize_missing_prd_fields() {
   fi
   if jq -e '.quality.execution.lastReplanReason' "$tmp_file" >/dev/null 2>&1; then :; else
     jq '.quality.execution.lastReplanReason = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.tasksSinceFullVerify' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.tasksSinceFullVerify = 0' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastFullVerifyCommit' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastFullVerifyCommit = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastFullVerifyAt' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastFullVerifyAt = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastAutoReplanAt' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastAutoReplanAt = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastAutoReplanReason' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastAutoReplanReason = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.execution.lastAutoReplanResult' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.execution.lastAutoReplanResult = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
 
@@ -355,21 +385,44 @@ initialize_missing_prd_fields() {
 load_execution_config() {
   local config_file="${1:-.issueloop.config.json}"
 
+  # Base defaults preserve legacy behavior when new keys are absent.
+  EXEC_PROFILE="greenfield"
   EXEC_GATE_MODE="enforce"
   EXEC_EVENT_REQUIRED="true"
   EXEC_VERIFY_TIMEOUT_SECONDS=600
   EXEC_VERIFY_MAX_OUTPUT_LINES=80
   EXEC_VERIFY_GLOBAL_COMMANDS_JSON='[]'
+  EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON='[]'
+  EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON='[]'
+  EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS=0
+  EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT="false"
   EXEC_VERIFY_SECURITY_COMMANDS_JSON='[]'
   EXEC_VERIFY_RUN_SECURITY_EACH="false"
   EXEC_SEARCH_REQUIRED="true"
   EXEC_SEARCH_MIN_QUERIES=2
+  EXEC_TASK_SIZING_ENABLED="false"
+  EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES=3
+  EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA=10
+  EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS=6
+  EXEC_TASK_SIZING_MAX_FILES=12
+  EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED="true"
+  EXEC_CONTEXT_MANIFEST_ENABLED="false"
+  EXEC_CONTEXT_MANIFEST_ALGORITHM="sha256"
+  EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH="false"
   EXEC_BROWSER_REQUIRED_FOR_UI="true"
   EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE="true"
   EXEC_BROWSER_ALLOWED_TOOLS_JSON='["playwright","dev-browser"]'
+  EXEC_REPLAN_AUTO_GENERATE_ON_STALE="false"
+  EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK="true"
+  EXEC_REPLAN_MAX_GENERATED_TASKS=6
   EXEC_PLACEHOLDER_ENABLED="true"
   EXEC_PLACEHOLDER_PATTERNS_JSON='["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]'
   EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON='["(^|/)test(s)?/","\\\\.md$"]'
+  EXEC_PLACEHOLDER_SEMANTIC_ENABLED="false"
+  EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS="true"
+  EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS="true"
+  EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED="false"
+  EXEC_TEST_INTENT_ENFORCE="false"
   EXEC_STALE_ENABLED="true"
   EXEC_STALE_SAME_TASK_THRESHOLD=2
   EXEC_STALE_CONSECUTIVE_THRESHOLD=4
@@ -386,35 +439,103 @@ load_execution_config() {
   MEMORY_MANAGED_SECTION_MARKER="issues-loop:auto-patterns"
 
   if [ -f "$config_file" ]; then
-    EXEC_GATE_MODE=$(jq -r '.execution.gateMode // "enforce"' "$config_file" 2>/dev/null || echo "enforce")
-    EXEC_EVENT_REQUIRED=$(jq -r '.execution.eventEvidence.required // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_VERIFY_TIMEOUT_SECONDS=$(jq -r '.execution.verify.commandTimeoutSeconds // 600' "$config_file" 2>/dev/null || echo "600")
-    EXEC_VERIFY_MAX_OUTPUT_LINES=$(jq -r '.execution.verify.maxOutputLinesPerCommand // 80' "$config_file" 2>/dev/null || echo "80")
-    EXEC_VERIFY_GLOBAL_COMMANDS_JSON=$(jq -c '.execution.verify.globalVerifyCommands // []' "$config_file" 2>/dev/null || echo '[]')
-    EXEC_VERIFY_SECURITY_COMMANDS_JSON=$(jq -c '.execution.verify.securityVerifyCommands // []' "$config_file" 2>/dev/null || echo '[]')
-    EXEC_VERIFY_RUN_SECURITY_EACH=$(jq -r '.execution.verify.runSecurityVerifyOnEveryTask // false' "$config_file" 2>/dev/null || echo "false")
-    EXEC_SEARCH_REQUIRED=$(jq -r '.execution.searchEvidence.required // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_SEARCH_MIN_QUERIES=$(jq -r '.execution.searchEvidence.minQueries // 2' "$config_file" 2>/dev/null || echo "2")
-    EXEC_BROWSER_REQUIRED_FOR_UI=$(jq -r '.execution.browserVerification.requiredForUiTasks // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE=$(jq -r '.execution.browserVerification.hardFailWhenUnavailable // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_BROWSER_ALLOWED_TOOLS_JSON=$(jq -c '.execution.browserVerification.allowedTools // ["playwright","dev-browser"]' "$config_file" 2>/dev/null || echo '["playwright","dev-browser"]')
-    EXEC_PLACEHOLDER_ENABLED=$(jq -r '.execution.placeholder.enabled // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_PLACEHOLDER_PATTERNS_JSON=$(jq -c '.execution.placeholder.patterns // ["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]' "$config_file" 2>/dev/null || echo '["TODO\\\\b","FIXME\\\\b","placeholder\\\\b","stub\\\\b","not implemented","mock implementation"]')
-    EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON=$(jq -c '.execution.placeholder.excludePathRegex // ["(^|/)test(s)?/","\\\\.md$"]' "$config_file" 2>/dev/null || echo '["(^|/)test(s)?/","\\\\.md$"]')
-    EXEC_STALE_ENABLED=$(jq -r '.execution.stalePlan.enabled // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_STALE_SAME_TASK_THRESHOLD=$(jq -r '.execution.stalePlan.sameTaskRetryThreshold // 2' "$config_file" 2>/dev/null || echo "2")
-    EXEC_STALE_CONSECUTIVE_THRESHOLD=$(jq -r '.execution.stalePlan.consecutiveRetryThreshold // 4' "$config_file" 2>/dev/null || echo "4")
-    EXEC_CONTEXT_PREFER_COMPACTED=$(jq -r '.execution.context.preferCompactedSummary // true' "$config_file" 2>/dev/null || echo "true")
-    EXEC_CONTEXT_MAX_TASK_LOGS=$(jq -r '.execution.context.maxTaskLogs // 8' "$config_file" 2>/dev/null || echo "8")
-    EXEC_CONTEXT_MAX_DISCOVERY_NOTES=$(jq -r '.execution.context.maxDiscoveryNotes // 6' "$config_file" 2>/dev/null || echo "6")
-    EXEC_CONTEXT_MAX_REVIEW_LOGS=$(jq -r '.execution.context.maxReviewLogs // 4' "$config_file" 2>/dev/null || echo "4")
-    EXEC_MAX_TASK_ATTEMPTS=$(jq -r '.maxTaskAttempts // 3' "$config_file" 2>/dev/null || echo "3")
-    EXEC_LABEL_PLANNING=$(jq -r '.labels.planning // "AI: Planning"' "$config_file" 2>/dev/null || echo "AI: Planning")
-    MEMORY_AUTO_SYNC_DOCS=$(jq -r '.memory.autoSyncDocs // true' "$config_file" 2>/dev/null || echo "true")
-    MEMORY_MIN_CONFIDENCE=$(jq -r '.memory.minConfidence // 0.8' "$config_file" 2>/dev/null || echo "0.8")
-    MEMORY_DOC_TARGETS_JSON=$(jq -c '.memory.docTargets // ["AGENTS.md","CLAUDE.md"]' "$config_file" 2>/dev/null || echo '["AGENTS.md","CLAUDE.md"]')
-    MEMORY_MAX_PATTERNS_PER_TASK=$(jq -r '.memory.maxPatternsPerTask // 3' "$config_file" 2>/dev/null || echo "3")
-    MEMORY_MANAGED_SECTION_MARKER=$(jq -r '.memory.managedSectionMarker // "issues-loop:auto-patterns"' "$config_file" 2>/dev/null || echo "issues-loop:auto-patterns")
+    EXEC_PROFILE=$(jq -r '.execution.profile // "greenfield"' "$config_file" 2>/dev/null || echo "greenfield")
+
+    # Profile overlay is applied first, then explicit keys may override.
+    case "$EXEC_PROFILE" in
+      brownfield)
+        EXEC_TASK_SIZING_ENABLED="true"
+        EXEC_CONTEXT_MANIFEST_ENABLED="true"
+        EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS=3
+        EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT="true"
+        EXEC_REPLAN_AUTO_GENERATE_ON_STALE="true"
+        EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK="true"
+        EXEC_REPLAN_MAX_GENERATED_TASKS=6
+        EXEC_PLACEHOLDER_SEMANTIC_ENABLED="true"
+        EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS="true"
+        EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS="true"
+        EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED="true"
+        EXEC_TEST_INTENT_ENFORCE="false"
+        EXEC_SEARCH_MIN_QUERIES=3
+        EXEC_STALE_SAME_TASK_THRESHOLD=1
+        EXEC_STALE_CONSECUTIVE_THRESHOLD=3
+        ;;
+      greenfield)
+        :
+        ;;
+      *)
+        EXEC_PROFILE="greenfield"
+        ;;
+    esac
+
+    EXEC_GATE_MODE=$(jq -r --arg default "$EXEC_GATE_MODE" '.execution.gateMode // $default' "$config_file" 2>/dev/null || echo "$EXEC_GATE_MODE")
+    EXEC_EVENT_REQUIRED=$(jq -r --arg default "$EXEC_EVENT_REQUIRED" '.execution.eventEvidence.required // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_EVENT_REQUIRED")
+    EXEC_VERIFY_TIMEOUT_SECONDS=$(jq -r --argjson default "$EXEC_VERIFY_TIMEOUT_SECONDS" '.execution.verify.commandTimeoutSeconds // $default' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_TIMEOUT_SECONDS")
+    EXEC_VERIFY_MAX_OUTPUT_LINES=$(jq -r --argjson default "$EXEC_VERIFY_MAX_OUTPUT_LINES" '.execution.verify.maxOutputLinesPerCommand // $default' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_MAX_OUTPUT_LINES")
+
+    # Compatibility: if fastGlobalVerifyCommands is missing, use legacy globalVerifyCommands.
+    EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON=$(jq -c '
+      if (.execution.verify? | type) == "object" and (.execution.verify | has("fastGlobalVerifyCommands")) then
+        (.execution.verify.fastGlobalVerifyCommands // [])
+      else
+        (.execution.verify.globalVerifyCommands // [])
+      end
+    ' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON")
+    EXEC_VERIFY_GLOBAL_COMMANDS_JSON="$EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON"
+
+    EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON=$(jq -c --argjson default "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" '.execution.verify.fullGlobalVerifyCommands // $default' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON")
+    EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS=$(jq -r --argjson default "$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS" '.execution.verify.fullRunEveryNPassedTasks // $default' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS")
+    EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT=$(jq -r --arg default "$EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT" '.execution.verify.runFullVerifyBeforeTestingCheckpoint // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT")
+    EXEC_VERIFY_SECURITY_COMMANDS_JSON=$(jq -c --argjson default "$EXEC_VERIFY_SECURITY_COMMANDS_JSON" '.execution.verify.securityVerifyCommands // $default' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_SECURITY_COMMANDS_JSON")
+    EXEC_VERIFY_RUN_SECURITY_EACH=$(jq -r --arg default "$EXEC_VERIFY_RUN_SECURITY_EACH" '.execution.verify.runSecurityVerifyOnEveryTask // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_VERIFY_RUN_SECURITY_EACH")
+
+    EXEC_SEARCH_REQUIRED=$(jq -r --arg default "$EXEC_SEARCH_REQUIRED" '.execution.searchEvidence.required // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_SEARCH_REQUIRED")
+    EXEC_SEARCH_MIN_QUERIES=$(jq -r --argjson default "$EXEC_SEARCH_MIN_QUERIES" '.execution.searchEvidence.minQueries // $default' "$config_file" 2>/dev/null || echo "$EXEC_SEARCH_MIN_QUERIES")
+
+    EXEC_TASK_SIZING_ENABLED=$(jq -r --arg default "$EXEC_TASK_SIZING_ENABLED" '.execution.taskSizing.enabled // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_ENABLED")
+    EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES=$(jq -r --argjson default "$EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES" '.execution.taskSizing.maxDescriptionSentences // $default' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_MAX_DESCRIPTION_SENTENCES")
+    EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA=$(jq -r --argjson default "$EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA" '.execution.taskSizing.maxAcceptanceCriteria // $default' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_MAX_ACCEPTANCE_CRITERIA")
+    EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS=$(jq -r --argjson default "$EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS" '.execution.taskSizing.maxVerifyCommands // $default' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_MAX_VERIFY_COMMANDS")
+    EXEC_TASK_SIZING_MAX_FILES=$(jq -r --argjson default "$EXEC_TASK_SIZING_MAX_FILES" '.execution.taskSizing.maxFiles // $default' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_MAX_FILES")
+    EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED=$(jq -r --arg default "$EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED" '.execution.taskSizing.hardFailOnOversized // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED")
+
+    EXEC_CONTEXT_MANIFEST_ENABLED=$(jq -r --arg default "$EXEC_CONTEXT_MANIFEST_ENABLED" '.execution.contextManifest.enabled // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MANIFEST_ENABLED")
+    EXEC_CONTEXT_MANIFEST_ALGORITHM=$(jq -r --arg default "$EXEC_CONTEXT_MANIFEST_ALGORITHM" '.execution.contextManifest.algorithm // $default' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MANIFEST_ALGORITHM")
+    EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH=$(jq -r --arg default "$EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH" '.execution.contextManifest.enforceHashMatch // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH")
+
+    EXEC_BROWSER_REQUIRED_FOR_UI=$(jq -r --arg default "$EXEC_BROWSER_REQUIRED_FOR_UI" '.execution.browserVerification.requiredForUiTasks // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_BROWSER_REQUIRED_FOR_UI")
+    EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE=$(jq -r --arg default "$EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE" '.execution.browserVerification.hardFailWhenUnavailable // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_BROWSER_HARD_FAIL_WHEN_UNAVAILABLE")
+    EXEC_BROWSER_ALLOWED_TOOLS_JSON=$(jq -c --argjson default "$EXEC_BROWSER_ALLOWED_TOOLS_JSON" '.execution.browserVerification.allowedTools // $default' "$config_file" 2>/dev/null || echo "$EXEC_BROWSER_ALLOWED_TOOLS_JSON")
+
+    EXEC_REPLAN_AUTO_GENERATE_ON_STALE=$(jq -r --arg default "$EXEC_REPLAN_AUTO_GENERATE_ON_STALE" '.execution.replan.autoGenerateOnStale // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_REPLAN_AUTO_GENERATE_ON_STALE")
+    EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK=$(jq -r --arg default "$EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK" '.execution.replan.autoApplyIfSingleTask // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK")
+    EXEC_REPLAN_MAX_GENERATED_TASKS=$(jq -r --argjson default "$EXEC_REPLAN_MAX_GENERATED_TASKS" '.execution.replan.maxGeneratedTasks // $default' "$config_file" 2>/dev/null || echo "$EXEC_REPLAN_MAX_GENERATED_TASKS")
+
+    EXEC_PLACEHOLDER_ENABLED=$(jq -r --arg default "$EXEC_PLACEHOLDER_ENABLED" '.execution.placeholder.enabled // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_ENABLED")
+    EXEC_PLACEHOLDER_PATTERNS_JSON=$(jq -c --argjson default "$EXEC_PLACEHOLDER_PATTERNS_JSON" '.execution.placeholder.patterns // $default' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_PATTERNS_JSON")
+    EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON=$(jq -c --argjson default "$EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON" '.execution.placeholder.excludePathRegex // $default' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_EXCLUDE_REGEX_JSON")
+    EXEC_PLACEHOLDER_SEMANTIC_ENABLED=$(jq -r --arg default "$EXEC_PLACEHOLDER_SEMANTIC_ENABLED" '.execution.placeholder.semanticChecks.enabled // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_SEMANTIC_ENABLED")
+    EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS=$(jq -r --arg default "$EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS" '.execution.placeholder.semanticChecks.blockTrivialConstantReturns // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_BLOCK_TRIVIAL_CONSTANT_RETURNS")
+    EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS=$(jq -r --arg default "$EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS" '.execution.placeholder.semanticChecks.blockAlwaysTrueFalseConditionals // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_PLACEHOLDER_BLOCK_ALWAYS_TRUE_FALSE_CONDITIONALS")
+
+    EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED=$(jq -r --arg default "$EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED" '.execution.testIntent.requiredWhenTestsChanged // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED")
+    EXEC_TEST_INTENT_ENFORCE=$(jq -r --arg default "$EXEC_TEST_INTENT_ENFORCE" '.execution.testIntent.enforce // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_TEST_INTENT_ENFORCE")
+
+    EXEC_STALE_ENABLED=$(jq -r --arg default "$EXEC_STALE_ENABLED" '.execution.stalePlan.enabled // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_STALE_ENABLED")
+    EXEC_STALE_SAME_TASK_THRESHOLD=$(jq -r --argjson default "$EXEC_STALE_SAME_TASK_THRESHOLD" '.execution.stalePlan.sameTaskRetryThreshold // $default' "$config_file" 2>/dev/null || echo "$EXEC_STALE_SAME_TASK_THRESHOLD")
+    EXEC_STALE_CONSECUTIVE_THRESHOLD=$(jq -r --argjson default "$EXEC_STALE_CONSECUTIVE_THRESHOLD" '.execution.stalePlan.consecutiveRetryThreshold // $default' "$config_file" 2>/dev/null || echo "$EXEC_STALE_CONSECUTIVE_THRESHOLD")
+
+    EXEC_CONTEXT_PREFER_COMPACTED=$(jq -r --arg default "$EXEC_CONTEXT_PREFER_COMPACTED" '.execution.context.preferCompactedSummary // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_PREFER_COMPACTED")
+    EXEC_CONTEXT_MAX_TASK_LOGS=$(jq -r --argjson default "$EXEC_CONTEXT_MAX_TASK_LOGS" '.execution.context.maxTaskLogs // $default' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MAX_TASK_LOGS")
+    EXEC_CONTEXT_MAX_DISCOVERY_NOTES=$(jq -r --argjson default "$EXEC_CONTEXT_MAX_DISCOVERY_NOTES" '.execution.context.maxDiscoveryNotes // $default' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MAX_DISCOVERY_NOTES")
+    EXEC_CONTEXT_MAX_REVIEW_LOGS=$(jq -r --argjson default "$EXEC_CONTEXT_MAX_REVIEW_LOGS" '.execution.context.maxReviewLogs // $default' "$config_file" 2>/dev/null || echo "$EXEC_CONTEXT_MAX_REVIEW_LOGS")
+    EXEC_MAX_TASK_ATTEMPTS=$(jq -r --argjson default "$EXEC_MAX_TASK_ATTEMPTS" '.maxTaskAttempts // $default' "$config_file" 2>/dev/null || echo "$EXEC_MAX_TASK_ATTEMPTS")
+    EXEC_LABEL_PLANNING=$(jq -r --arg default "$EXEC_LABEL_PLANNING" '.labels.planning // $default' "$config_file" 2>/dev/null || echo "$EXEC_LABEL_PLANNING")
+    MEMORY_AUTO_SYNC_DOCS=$(jq -r --arg default "$MEMORY_AUTO_SYNC_DOCS" '.memory.autoSyncDocs // ($default | test("true";"i"))' "$config_file" 2>/dev/null || echo "$MEMORY_AUTO_SYNC_DOCS")
+    MEMORY_MIN_CONFIDENCE=$(jq -r --argjson default "$MEMORY_MIN_CONFIDENCE" '.memory.minConfidence // $default' "$config_file" 2>/dev/null || echo "$MEMORY_MIN_CONFIDENCE")
+    MEMORY_DOC_TARGETS_JSON=$(jq -c --argjson default "$MEMORY_DOC_TARGETS_JSON" '.memory.docTargets // $default' "$config_file" 2>/dev/null || echo "$MEMORY_DOC_TARGETS_JSON")
+    MEMORY_MAX_PATTERNS_PER_TASK=$(jq -r --argjson default "$MEMORY_MAX_PATTERNS_PER_TASK" '.memory.maxPatternsPerTask // $default' "$config_file" 2>/dev/null || echo "$MEMORY_MAX_PATTERNS_PER_TASK")
+    MEMORY_MANAGED_SECTION_MARKER=$(jq -r --arg default "$MEMORY_MANAGED_SECTION_MARKER" '.memory.managedSectionMarker // $default' "$config_file" 2>/dev/null || echo "$MEMORY_MANAGED_SECTION_MARKER")
   fi
 }
 
@@ -534,6 +655,434 @@ run_verify_suite() {
       "failed": $failed,
       "allPassed": $all_passed
     }'
+}
+
+# Validate whether a task is right-sized for one loop iteration.
+#
+# Args:
+#   $1 - task JSON object
+#   $2 - enabled flag ("true"/"false")
+#   $3 - max description sentences
+#   $4 - max acceptance criteria count
+#   $5 - max verify commands count
+#   $6 - max files count
+#
+# Output:
+# {"ok":true|false,"metrics":{...},"violations":[...]}
+validate_task_sizing() {
+  local task_json="${1:-}"
+  local enabled="${2:-false}"
+  local max_desc_sentences="${3:-3}"
+  local max_acceptance="${4:-10}"
+  local max_verify="${5:-6}"
+  local max_files="${6:-12}"
+  [ -n "$task_json" ] || task_json='{}'
+
+  if ! echo "$task_json" | jq -e '.' >/dev/null 2>&1; then
+    task_json='{}'
+  fi
+
+  local description acceptance_count verify_count files_count sentence_count
+  description=$(echo "$task_json" | jq -r '.description // ""' 2>/dev/null || echo "")
+  acceptance_count=$(echo "$task_json" | jq -r '(.acceptanceCriteria // []) | if type=="array" then length else 0 end' 2>/dev/null || echo "0")
+  verify_count=$(echo "$task_json" | jq -r '(.verifyCommands // []) | if type=="array" then length else 0 end' 2>/dev/null || echo "0")
+  files_count=$(echo "$task_json" | jq -r '(.files // []) | if type=="array" then length else 0 end' 2>/dev/null || echo "0")
+  sentence_count=$(printf "%s" "$description" | awk -F'[.!?]+' '{c=0; for(i=1;i<=NF;i++) if($i ~ /[^[:space:]]/) c++; print c}')
+  [ -n "$sentence_count" ] || sentence_count=0
+  [[ "$sentence_count" =~ ^[0-9]+$ ]] || sentence_count=0
+  [[ "$acceptance_count" =~ ^[0-9]+$ ]] || acceptance_count=0
+  [[ "$verify_count" =~ ^[0-9]+$ ]] || verify_count=0
+  [[ "$files_count" =~ ^[0-9]+$ ]] || files_count=0
+
+  local violations='[]'
+  if [ "$(echo "$enabled" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    if [ "$sentence_count" -gt "$max_desc_sentences" ]; then
+      violations=$(echo "$violations" | jq --arg v "description sentences ${sentence_count}>${max_desc_sentences}" '. + [$v]')
+    fi
+    if [ "$acceptance_count" -gt "$max_acceptance" ]; then
+      violations=$(echo "$violations" | jq --arg v "acceptance criteria ${acceptance_count}>${max_acceptance}" '. + [$v]')
+    fi
+    if [ "$verify_count" -gt "$max_verify" ]; then
+      violations=$(echo "$violations" | jq --arg v "verify commands ${verify_count}>${max_verify}" '. + [$v]')
+    fi
+    if [ "$files_count" -gt "$max_files" ]; then
+      violations=$(echo "$violations" | jq --arg v "files ${files_count}>${max_files}" '. + [$v]')
+    fi
+  fi
+
+  local ok="true"
+  if [ "$(echo "$enabled" | tr '[:upper:]' '[:lower:]')" = "true" ] && [ "$(echo "$violations" | jq 'length')" -gt 0 ]; then
+    ok="false"
+  fi
+
+  jq -nc \
+    --argjson sentence_count "$sentence_count" \
+    --argjson acceptance_count "$acceptance_count" \
+    --argjson verify_count "$verify_count" \
+    --argjson files_count "$files_count" \
+    --argjson violations "$violations" \
+    --arg ok "$ok" \
+    '{
+      "ok": ($ok == "true"),
+      "metrics": {
+        "descriptionSentences": $sentence_count,
+        "acceptanceCriteriaCount": $acceptance_count,
+        "verifyCommandsCount": $verify_count,
+        "filesCount": $files_count
+      },
+      "violations": $violations
+    }'
+}
+
+# Build canonical context manifest JSON for deterministic hashing.
+#
+# Args:
+#   $1 - task JSON object
+#   $2 - issue body
+#   $3 - issue memory bundle
+#   $4 - git log
+#   $5 - repo structure list
+#   $6 - active wisps
+#
+# Output: JSON object
+build_context_manifest() {
+  local task_json="${1:-}"
+  local issue_body="${2:-}"
+  local issue_memory_bundle="${3:-}"
+  local git_log="${4:-}"
+  local repo_structure="${5:-}"
+  local active_wisps="${6:-}"
+  [ -n "$task_json" ] || task_json='{}'
+
+  jq -nc \
+    --argjson task "$task_json" \
+    --arg issue_body "$issue_body" \
+    --arg issue_memory_bundle "$issue_memory_bundle" \
+    --arg git_log "$git_log" \
+    --arg repo_structure "$repo_structure" \
+    --arg active_wisps "$active_wisps" \
+    '{
+      "task": $task,
+      "issueBody": $issue_body,
+      "issueMemoryBundle": $issue_memory_bundle,
+      "gitLog": $git_log,
+      "repoStructure": ($repo_structure | split("\n") | map(select(length > 0))),
+      "activeWisps": $active_wisps
+    }'
+}
+
+# Compute deterministic hash for a context manifest.
+#
+# Args:
+#   $1 - manifest JSON object
+#   $2 - algorithm ("sha256")
+#
+# Output: hex hash string
+compute_context_manifest_hash() {
+  local manifest_json="${1:-}"
+  local algorithm="${2:-sha256}"
+  local canonical
+  [ -n "$manifest_json" ] || manifest_json='{}'
+  canonical=$(echo "$manifest_json" | jq -cS '.' 2>/dev/null || echo '{}')
+
+  case "$(echo "$algorithm" | tr '[:upper:]' '[:lower:]')" in
+    sha256)
+      echo -n "$canonical" | shasum -a 256 | cut -d' ' -f1
+      ;;
+    *)
+      echo -n "$canonical" | shasum -a 256 | cut -d' ' -f1
+      ;;
+  esac
+}
+
+# Validate context manifest evidence from task event JSON.
+#
+# Args:
+#   $1 - event JSON object
+#   $2 - expected hash
+#   $3 - expected algorithm
+#   $4 - required flag ("true"/"false")
+#
+# Output:
+# {"ok":true|false,"reason":"...","observedHash":"...","observedAlgorithm":"..."}
+validate_context_manifest_evidence() {
+  local event_json="${1:-}"
+  local expected_hash="${2:-}"
+  local expected_algorithm="${3:-sha256}"
+  local required="${4:-false}"
+
+  if [ -z "$event_json" ] || [ "$event_json" = "null" ]; then
+    if [ "$(echo "$required" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      echo '{"ok":false,"reason":"task log event missing","observedHash":"","observedAlgorithm":""}'
+    else
+      echo '{"ok":true,"reason":"task log event missing (advisory)","observedHash":"","observedAlgorithm":""}'
+    fi
+    return 0
+  fi
+
+  local observed_hash observed_algorithm
+  observed_hash=$(echo "$event_json" | jq -r '.contextManifest.hash // ""' 2>/dev/null || echo "")
+  observed_algorithm=$(echo "$event_json" | jq -r '.contextManifest.algorithm // ""' 2>/dev/null || echo "")
+
+  if [ -z "$observed_hash" ]; then
+    if [ "$(echo "$required" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+      jq -nc --arg hash "$observed_hash" --arg algo "$observed_algorithm" \
+        '{"ok":false,"reason":"contextManifest.hash missing","observedHash":$hash,"observedAlgorithm":$algo}'
+    else
+      jq -nc --arg hash "$observed_hash" --arg algo "$observed_algorithm" \
+        '{"ok":true,"reason":"contextManifest.hash missing (advisory)","observedHash":$hash,"observedAlgorithm":$algo}'
+    fi
+    return 0
+  fi
+
+  if [ "$observed_hash" = "$expected_hash" ]; then
+    jq -nc --arg hash "$observed_hash" --arg algo "$observed_algorithm" \
+      '{"ok":true,"reason":"context manifest hash matches","observedHash":$hash,"observedAlgorithm":$algo}'
+  else
+    jq -nc --arg hash "$observed_hash" --arg algo "$observed_algorithm" --arg expected "$expected_hash" \
+      '{"ok":false,"reason":("context manifest hash mismatch expected=" + $expected),"observedHash":$hash,"observedAlgorithm":$algo}'
+  fi
+}
+
+# Detect changed test files for a commit or worktree diff.
+#
+# Args:
+#   $1 - commit hash or WORKTREE
+#
+# Output: JSON array of file paths
+detect_changed_test_files() {
+  local commit_target="${1:-WORKTREE}"
+  local changed_files
+
+  if [ -n "$commit_target" ] && [ "$commit_target" != "WORKTREE" ] && [ "$commit_target" != "null" ]; then
+    changed_files=$(git show --name-only --pretty="" "$commit_target" 2>/dev/null || echo "")
+  else
+    changed_files=$(git diff --name-only HEAD 2>/dev/null || git diff --name-only 2>/dev/null || echo "")
+  fi
+
+  printf "%s\n" "$changed_files" | sed '/^$/d' | jq -R -s -c '
+    split("\n")
+    | map(select(length > 0))
+    | map(select(
+        test("(^|/)(test|tests|__tests__|spec|specs)(/|$)"; "i")
+        or test("\\.(test|spec)\\.[A-Za-z0-9]+$"; "i")
+      ))
+    | unique
+  '
+}
+
+# Validate test intent evidence in task event JSON.
+#
+# Args:
+#   $1 - event JSON object
+#
+# Output:
+# {"ok":true|false,"count":N,"reason":"..."}
+validate_test_intent_evidence() {
+  local event_json="${1:-}"
+  if [ -z "$event_json" ] || [ "$event_json" = "null" ]; then
+    echo '{"ok":false,"count":0,"reason":"task log event missing"}'
+    return 0
+  fi
+
+  local total valid
+  total=$(echo "$event_json" | jq '[.testIntent[]?] | length' 2>/dev/null || echo "0")
+  valid=$(echo "$event_json" | jq '[.testIntent[]? | select((.test // "" | tostring | length) > 0 and (.why // "" | tostring | length) > 0)] | length' 2>/dev/null || echo "0")
+
+  if [ "$total" -gt 0 ] && [ "$total" -eq "$valid" ]; then
+    jq -nc --argjson n "$total" '{"ok":true,"count":$n,"reason":"valid testIntent evidence present"}'
+  elif [ "$total" -gt 0 ]; then
+    jq -nc --argjson total "$total" --argjson valid "$valid" \
+      '{"ok":false,"count":$valid,"reason":("testIntent entries invalid " + ($valid|tostring) + "/" + ($total|tostring))}'
+  else
+    echo '{"ok":false,"count":0,"reason":"testIntent missing"}'
+  fi
+}
+
+# Convert testIntent evidence into reusable pattern objects.
+#
+# Args:
+#   $1 - event JSON object
+#
+# Output: JSON array compatible with ingest_task_patterns_into_prd .patterns schema
+convert_test_intent_to_patterns() {
+  local event_json="${1:-}"
+  if [ -z "$event_json" ] || [ "$event_json" = "null" ]; then
+    echo "[]"
+    return 0
+  fi
+  echo "$event_json" | jq -c '
+    [
+      (.testIntent // [])[]? |
+      {
+        "statement": ("Test intent: " + ((.why // "") | tostring)),
+        "scope": ("tests:" + ((.test // "unknown") | tostring)),
+        "files": [],
+        "confidence": 0.95
+      } |
+      select((.statement | length) > 12)
+    ]
+  ' 2>/dev/null || echo "[]"
+}
+
+# Record successful full-verify run metadata.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - commit hash
+record_full_verify_success() {
+  local prd_file="${1:-prd.json}"
+  local commit_hash="${2:-}"
+  local now_ts
+  now_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  jq --arg commit "$commit_hash" --arg now_ts "$now_ts" '
+    .quality.execution.tasksSinceFullVerify = 0 |
+    .quality.execution.lastFullVerifyCommit = (if $commit == "" then null else $commit end) |
+    .quality.execution.lastFullVerifyAt = $now_ts
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Increment tasksSinceFullVerify counter.
+#
+# Args:
+#   $1 - path to prd.json
+increment_tasks_since_full_verify() {
+  local prd_file="${1:-prd.json}"
+  jq '
+    .quality.execution.tasksSinceFullVerify = ((.quality.execution.tasksSinceFullVerify // 0) + 1)
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Record auto-replan audit metadata.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - reason
+#   $3 - result label
+record_auto_replan_audit() {
+  local prd_file="${1:-prd.json}"
+  local reason="$2"
+  local result="$3"
+  local now_ts
+  now_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  jq --arg reason "$reason" --arg result "$result" --arg now_ts "$now_ts" '
+    .quality.execution.lastAutoReplanAt = $now_ts |
+    .quality.execution.lastAutoReplanReason = $reason |
+    .quality.execution.lastAutoReplanResult = $result
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Apply a single auto-replan replacement to the current task.
+#
+# Args:
+#   $1 - path to prd.json
+#   $2 - task id to replace
+#   $3 - replacement task JSON object
+apply_auto_replan_single_task() {
+  local prd_file="${1:-prd.json}"
+  local task_id="$2"
+  local replacement_json="${3:-}"
+  [ -n "$replacement_json" ] || replacement_json='{}'
+  if ! echo "$replacement_json" | jq -e '.' >/dev/null 2>&1; then
+    replacement_json='{}'
+  fi
+
+  jq --arg task_id "$task_id" --argjson replacement "$replacement_json" '
+    .userStories = (
+      .userStories | map(
+        if .id == $task_id then
+          .title = ($replacement.title // .title) |
+          .description = ($replacement.description // .description) |
+          .acceptanceCriteria = ($replacement.acceptanceCriteria // .acceptanceCriteria // []) |
+          .verifyCommands = ($replacement.verifyCommands // .verifyCommands // []) |
+          .dependsOn = ($replacement.dependsOn // .dependsOn // []) |
+          .files = ($replacement.files // .files // []) |
+          .notes = ($replacement.notes // .notes // "") |
+          .passes = false |
+          .attempts = 0 |
+          .lastAttempt = null
+        else . end
+      )
+    )
+  ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
+}
+
+# Extract a replan JSON array from agent output.
+#
+# Args:
+#   $1 - raw agent output text
+#
+# Output: JSON array or empty string
+extract_replan_json_from_agent_output() {
+  local output_text="$1"
+  local in_section=0
+  local in_json=0
+  local buffer=""
+
+  while IFS= read -r line; do
+    if echo "$line" | grep -q '### Replan JSON'; then
+      in_section=1
+      in_json=0
+      buffer=""
+      continue
+    fi
+    if [ "$in_section" -eq 1 ]; then
+      if echo "$line" | grep -qE '^\s*```json\s*$'; then
+        in_json=1
+        buffer=""
+        continue
+      fi
+      if [ "$in_json" -eq 1 ] && echo "$line" | grep -qE '^\s*```\s*$'; then
+        if [ -n "$buffer" ] && echo "$buffer" | jq -e '. | type == "array"' >/dev/null 2>&1; then
+          echo "$buffer" | jq -c '.'
+          return 0
+        fi
+        in_json=0
+        in_section=0
+        continue
+      fi
+      if [ "$in_json" -eq 1 ]; then
+        buffer="${buffer}${line}"
+      fi
+    fi
+  done <<< "$output_text"
+}
+
+# Validate/sanitize generated replan tasks.
+#
+# Args:
+#   $1 - candidate JSON array
+#   $2 - max tasks
+#
+# Output: sanitized JSON array
+validate_generated_replan_tasks() {
+  local tasks_json="${1:-[]}"
+  local max_tasks="${2:-6}"
+
+  echo "$tasks_json" | jq -c --argjson max_tasks "$max_tasks" '
+    if type != "array" then
+      []
+    else
+      [.[0:$max_tasks][] |
+        {
+          "title": ((.title // "") | tostring),
+          "description": ((.description // "") | tostring),
+          "acceptanceCriteria": [(.acceptanceCriteria // [])[]? | tostring],
+          "verifyCommands": [(.verifyCommands // [])[]? | tostring],
+          "dependsOn": [(.dependsOn // [])[]? | tostring],
+          "files": [(.files // [])[]? | tostring],
+          "notes": ((.notes // "") | tostring)
+        } |
+        select(
+          (.title | length > 0) and
+          (.description | length > 0) and
+          (.acceptanceCriteria | length > 0)
+        )
+      ]
+    end
+  ' 2>/dev/null || echo "[]"
 }
 
 # Update task status in prd.json from authoritative orchestrator result.
@@ -1151,6 +1700,7 @@ sync_task_patterns_to_docs() {
 #   $1 - commit hash to inspect, or "WORKTREE" for unstaged/staged worktree diff
 #   $2 - placeholder regex patterns JSON array
 #   $3 - file exclude regex JSON array
+#   $4 - semantic check config JSON object
 #
 # Output: JSON array of matches
 # [{"file":"...","line":42,"pattern":"TODO\\b","snippet":"TODO: ..."}]
@@ -1158,6 +1708,11 @@ scan_placeholder_patterns() {
   local commit_target="${1:-WORKTREE}"
   local patterns_json="${2:-[]}"
   local exclude_json="${3:-[]}"
+  local semantic_config_json="${4:-}"
+  [ -n "$semantic_config_json" ] || semantic_config_json='{}'
+  if ! echo "$semantic_config_json" | jq -e '.' >/dev/null 2>&1; then
+    semantic_config_json='{}'
+  fi
 
   local diff_file
   diff_file=$(mktemp)
@@ -1168,14 +1723,15 @@ scan_placeholder_patterns() {
     git diff --no-color --unified=0 HEAD > "$diff_file" 2>/dev/null || git diff --no-color --unified=0 > "$diff_file" 2>/dev/null || true
   fi
 
-  python3 - "$patterns_json" "$exclude_json" "$diff_file" <<'PY'
+  python3 - "$patterns_json" "$exclude_json" "$semantic_config_json" "$diff_file" <<'PY'
 import json
 import re
 import sys
 
 patterns = json.loads(sys.argv[1] or "[]")
 exclude = json.loads(sys.argv[2] or "[]")
-diff_path = sys.argv[3]
+semantic = json.loads(sys.argv[3] or "{}")
+diff_path = sys.argv[4]
 
 try:
     with open(diff_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -1197,6 +1753,21 @@ for p in patterns:
 matches = []
 current_file = None
 line_no = 0
+semantic_enabled = bool(semantic.get("enabled", False))
+block_trivial_return = bool(semantic.get("blockTrivialConstantReturns", True))
+block_constant_conditional = bool(semantic.get("blockAlwaysTrueFalseConditionals", True))
+
+trivial_return_re = re.compile(
+    r'^\s*return\s+('
+    r'true|false|null|nil|None|[0-9]+(?:\.[0-9]+)?|'
+    r'"[^"]*"|\'[^\']*\''
+    r')\s*;?\s*$',
+    re.IGNORECASE,
+)
+constant_conditional_re = re.compile(
+    r'^\s*(if|while)\s*\(\s*(true|false|0|1)\s*\)',
+    re.IGNORECASE,
+)
 
 for line in diff:
     if line.startswith("+++ "):
@@ -1215,6 +1786,7 @@ for line in diff:
         continue
     if line.startswith("+") and not line.startswith("+++"):
         snippet = line[1:]
+        recorded = False
         for original, pattern in compiled:
             if pattern.search(snippet):
                 matches.append(
@@ -1225,7 +1797,28 @@ for line in diff:
                         "snippet": snippet[:200],
                     }
                 )
+                recorded = True
                 break
+        if semantic_enabled and not recorded:
+            if block_trivial_return and trivial_return_re.search(snippet):
+                matches.append(
+                    {
+                        "file": current_file,
+                        "line": line_no,
+                        "pattern": "__SEMANTIC_TRIVIAL_CONSTANT_RETURN__",
+                        "snippet": snippet[:200],
+                    }
+                )
+                recorded = True
+            if block_constant_conditional and not recorded and constant_conditional_re.search(snippet):
+                matches.append(
+                    {
+                        "file": current_file,
+                        "line": line_no,
+                        "pattern": "__SEMANTIC_CONSTANT_CONDITIONAL__",
+                        "snippet": snippet[:200],
+                    }
+                )
         line_no += 1
     elif line.startswith(" "):
         line_no += 1

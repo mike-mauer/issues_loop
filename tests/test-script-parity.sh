@@ -86,6 +86,19 @@ echo "── Required Gate Functions ──"
 for fn in \
   load_execution_config \
   run_verify_suite \
+  validate_task_sizing \
+  build_context_manifest \
+  compute_context_manifest_hash \
+  validate_context_manifest_evidence \
+  detect_changed_test_files \
+  validate_test_intent_evidence \
+  convert_test_intent_to_patterns \
+  record_full_verify_success \
+  increment_tasks_since_full_verify \
+  record_auto_replan_audit \
+  apply_auto_replan_single_task \
+  extract_replan_json_from_agent_output \
+  validate_generated_replan_tasks \
   update_task_state_authoritative \
   is_task_exhausted \
   validate_search_evidence \
@@ -105,8 +118,21 @@ done
 echo ""
 echo "── Required Loop Control Paths ──"
 for pattern in \
+  "EXEC_PROFILE" \
+  "EXEC_TASK_SIZING_ENABLED" \
+  "EXEC_CONTEXT_MANIFEST_ENABLED" \
+  "EXEC_VERIFY_FAST_GLOBAL_COMMANDS_JSON" \
+  "EXEC_VERIFY_FULL_GLOBAL_COMMANDS_JSON" \
+  "EXEC_VERIFY_RUN_FULL_BEFORE_TESTING_CHECKPOINT" \
+  "EXEC_REPLAN_AUTO_GENERATE_ON_STALE" \
+  "EXEC_TEST_INTENT_REQUIRED_WHEN_TESTS_CHANGED" \
   "EXEC_EVENT_REQUIRED" \
   "EXEC_BROWSER_REQUIRED_FOR_UI" \
+  "validate_task_sizing" \
+  "build_context_manifest" \
+  "validate_context_manifest_evidence" \
+  "validate_test_intent_evidence" \
+  "auto_generate_replan_tasks" \
   "verify_browser_verification_on_github" \
   "ingest_task_patterns_into_prd" \
   "sync_task_patterns_to_docs" \
