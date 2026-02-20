@@ -149,3 +149,7 @@ When working in this repository, remember:
 - Changes should consider the end-user experience in target projects
 - Commands assume they're running in a user's project with existing code
 - Test changes by copying to a sample project and running the workflow
+
+<!-- issues-loop:auto-patterns:start -->
+- [.agents/skills/issues-loop/scripts] The .agents copy mirrors .claude copy structure; fixes should be applied identically to both (source: #19 US-002)
+<!-- issues-loop:auto-patterns:end -->

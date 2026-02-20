@@ -90,6 +90,23 @@
         "syncedDocs": [
           "/Users/mikemauer/Projects/Issues Loop/.claude/CLAUDE.md"
         ]
+      },
+      {
+        "key": "ptn_226359295c6f",
+        "statement": "The .agents copy mirrors .claude copy structure; fixes should be applied identically to both",
+        "scope": ".agents/skills/issues-loop/scripts",
+        "files": [
+          ".agents/skills/issues-loop/scripts/implement-loop.sh"
+        ],
+        "confidence": 0.95,
+        "issue": 19,
+        "taskId": "US-002",
+        "taskUid": "tsk_14a849eb76ce",
+        "commit": "05a99c7",
+        "createdAt": "2026-02-20T23:55:00Z",
+        "syncedDocs": [
+          "/Users/mikemauer/Projects/Issues Loop/CLAUDE.md"
+        ]
       }
     ]
   },
