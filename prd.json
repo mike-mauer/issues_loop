@@ -18,7 +18,9 @@
       "priority": 1,
       "title": "Add _post_review_to_github helper to .claude/scripts/implement-loop.sh",
       "description": "Add a `_post_review_to_github()` helper function (placed before `spawn_task_review_agent`) that extracts the `## 🔎 Code Review:` block from captured output using awk and posts it to GitHub via `gh issue comment`. Call this helper in both the async subshell and sync paths of `spawn_task_review_agent`, after writing to the log file.",
-      "files": [".claude/scripts/implement-loop.sh"],
+      "files": [
+        ".claude/scripts/implement-loop.sh"
+      ],
       "dependsOn": [],
       "discoveredFrom": null,
       "discoverySource": null,
@@ -33,7 +35,8 @@
       ],
       "passes": false,
       "attempts": 0,
-      "lastAttempt": null
+      "lastAttempt": null,
+      "requiresBrowserVerification": false
     },
     {
       "id": "US-002",
@@ -42,8 +45,12 @@
       "priority": 2,
       "title": "Mirror fix to .agents/skills/issues-loop/scripts/implement-loop.sh",
       "description": "Apply the same `_post_review_to_github()` helper and call sites to the `.agents/` copy of implement-loop.sh, which has the same `spawn_task_review_agent` function with minor differences (severity levels, autoEnqueue defaults).",
-      "files": [".agents/skills/issues-loop/scripts/implement-loop.sh"],
-      "dependsOn": ["US-001"],
+      "files": [
+        ".agents/skills/issues-loop/scripts/implement-loop.sh"
+      ],
+      "dependsOn": [
+        "US-001"
+      ],
       "discoveredFrom": null,
       "discoverySource": null,
       "acceptanceCriteria": [
@@ -57,11 +64,49 @@
       ],
       "passes": false,
       "attempts": 0,
-      "lastAttempt": null
+      "lastAttempt": null,
+      "requiresBrowserVerification": false
     }
   ],
   "globalVerifyCommands": [
     "bash -n .claude/scripts/implement-loop.sh && echo \"primary syntax ok\"",
     "bash -n .agents/skills/issues-loop/scripts/implement-loop.sh && echo \"agents syntax ok\""
-  ]
+  ],
+  "memory": {
+    "patterns": []
+  },
+  "quality": {
+    "reviewMode": "hybrid",
+    "reviewPolicy": {
+      "autoEnqueueSeverities": [
+        "critical"
+      ],
+      "approvalRequiredSeverities": [
+        "high"
+      ],
+      "minConfidenceForAutoEnqueue": 0.75,
+      "maxFindingsPerReview": 5
+    },
+    "findings": [],
+    "processedReviewKeys": [],
+    "finalReview": {
+      "status": "pending",
+      "reviewedCommit": null,
+      "lastReviewId": null,
+      "updatedAt": null
+    },
+    "execution": {
+      "consecutiveRetries": 0,
+      "currentTaskId": null,
+      "currentTaskRetryStreak": 0,
+      "lastReplanAt": null,
+      "lastReplanReason": null,
+      "tasksSinceFullVerify": 0,
+      "lastFullVerifyCommit": null,
+      "lastFullVerifyAt": null,
+      "lastAutoReplanAt": null,
+      "lastAutoReplanReason": null,
+      "lastAutoReplanResult": null
+    }
+  }
 }
