@@ -194,18 +194,93 @@
         "createdAt": "2026-02-20T23:59:00Z",
         "updatedAt": "2026-02-20T23:59:00Z",
         "enqueuedTaskIds": []
+      },
+      {
+        "key": "rev_final_6c6ab14:F-01",
+        "reviewId": "rev_final_6c6ab14",
+        "findingId": "F-01",
+        "issue": 19,
+        "scope": "final",
+        "parentTaskId": "FINAL",
+        "parentTaskUid": "final_review",
+        "reviewedCommit": "6c6ab14",
+        "severity": "high",
+        "confidence": 0.95,
+        "category": "adherence",
+        "title": "Severity schema and auto-enqueue defaults diverge between .claude and .agents copies",
+        "description": "The .claude copy restricts review prompt to critical|high severity with no suggestedTask guidance and defaults autoEnqueueSeverities to [\"critical\"]; the .agents copy allows all four severity levels with suggestedTask for critical/high and defaults to [\"critical\",\"high\"]. Projects installed from different sources get meaningfully different review behavior.",
+        "evidence": {
+          "file": ".claude/scripts/implement-loop.sh",
+          "line": "328-329,544"
+        },
+        "suggestedTask": null,
+        "status": "open",
+        "createdAt": "2026-02-20T23:59:00Z",
+        "updatedAt": "2026-02-20T23:59:00Z",
+        "enqueuedTaskIds": []
+      },
+      {
+        "key": "rev_final_6c6ab14:F-02",
+        "reviewId": "rev_final_6c6ab14",
+        "findingId": "F-02",
+        "issue": 19,
+        "scope": "final",
+        "parentTaskId": "FINAL",
+        "parentTaskUid": "final_review",
+        "reviewedCommit": "6c6ab14",
+        "severity": "high",
+        "confidence": 0.85,
+        "category": "production_readiness",
+        "title": "Silent gh failure in _post_review_to_github reproduces infinite-retry symptom",
+        "description": "gh issue comment runs with 2>/dev/null || true. On gh failure, nothing is logged; verify_review_log_on_github finds no comment, marks final review failed, and the loop retries indefinitely—same symptom as the original bug with an undiagnosable root cause.",
+        "evidence": {
+          "file": ".claude/scripts/implement-loop.sh",
+          "line": "354-355"
+        },
+        "suggestedTask": null,
+        "status": "open",
+        "createdAt": "2026-02-20T23:59:00Z",
+        "updatedAt": "2026-02-20T23:59:00Z",
+        "enqueuedTaskIds": []
+      },
+      {
+        "key": "rev_final_6c6ab14:F-03",
+        "reviewId": "rev_final_6c6ab14",
+        "findingId": "F-03",
+        "issue": 19,
+        "scope": "final",
+        "parentTaskId": "FINAL",
+        "parentTaskUid": "final_review",
+        "reviewedCommit": "6c6ab14",
+        "severity": "high",
+        "confidence": 0.90,
+        "category": "adherence",
+        "title": "output and exit_code not declared local in sync path of spawn_task_review_agent",
+        "description": "In the sync path these variables are assigned without local, leaking into the caller's scope. The async path is safe via subshell isolation. Inconsistent with the existing local declaration for other variables in the same function.",
+        "evidence": {
+          "file": ".claude/scripts/implement-loop.sh",
+          "line": "401-402"
+        },
+        "suggestedTask": null,
+        "status": "open",
+        "createdAt": "2026-02-20T23:59:00Z",
+        "updatedAt": "2026-02-20T23:59:00Z",
+        "enqueuedTaskIds": []
       }
     ],
     "processedReviewKeys": [
       "rev_final_2f962a0:F-01",
       "rev_final_2f962a0:F-02",
-      "rev_final_2f962a0:F-03"
+      "rev_final_2f962a0:F-03",
+      "rev_final_6c6ab14:F-01",
+      "rev_final_6c6ab14:F-02",
+      "rev_final_6c6ab14:F-03"
     ],
     "finalReview": {
-      "status": "running",
+      "status": "passed",
       "reviewedCommit": "6c6ab14",
-      "lastReviewId": null,
-      "updatedAt": "2026-02-20T23:54:36Z"
+      "lastReviewId": "rev_final_6c6ab14",
+      "updatedAt": "2026-02-20T23:56:13Z"
     },
     "execution": {
       "consecutiveRetries": 0,
