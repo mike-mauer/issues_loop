@@ -468,8 +468,8 @@ The loop runs a parallel code-review lane designed to improve quality without sl
 ```
 
 ### Severity Routing
-- **Auto-enqueue:** `critical`, `high` findings with confidence ≥ configured threshold.
-- **Approval path:** `medium`, `low` findings remain open until approved.
+- **Auto-enqueue:** `critical` findings with confidence ≥ configured threshold.
+- **Approval path:** `high` findings remain open until approved.
 - Review-generated tasks are tagged with `discoverySource: "code_review"`.
 
 ### Final Review Gate

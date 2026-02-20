@@ -170,8 +170,8 @@ initialize_missing_prd_fields() {
     jq '.quality = {
       "reviewMode": "hybrid",
       "reviewPolicy": {
-        "autoEnqueueSeverities": ["critical", "high"],
-        "approvalRequiredSeverities": ["medium", "low"],
+        "autoEnqueueSeverities": ["critical"],
+        "approvalRequiredSeverities": ["high"],
         "minConfidenceForAutoEnqueue": 0.75,
         "maxFindingsPerReview": 5
       },
@@ -194,19 +194,19 @@ initialize_missing_prd_fields() {
   fi
   if jq -e '.quality.reviewPolicy' "$tmp_file" >/dev/null 2>&1; then :; else
     jq '.quality.reviewPolicy = {
-      "autoEnqueueSeverities": ["critical", "high"],
-      "approvalRequiredSeverities": ["medium", "low"],
+      "autoEnqueueSeverities": ["critical"],
+      "approvalRequiredSeverities": ["high"],
       "minConfidenceForAutoEnqueue": 0.75,
       "maxFindingsPerReview": 5
     }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
   if jq -e '.quality.reviewPolicy.autoEnqueueSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
-    jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical", "high"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
   if jq -e '.quality.reviewPolicy.approvalRequiredSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
-    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["medium", "low"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["high"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
   if jq -e '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$tmp_file" >/dev/null 2>&1; then :; else
@@ -2370,7 +2370,7 @@ ingest_review_findings_into_prd() {
 build_enqueuable_review_tasks() {
   local prd_file="${1:-prd.json}"
   jq -c '
-    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical"]) as $autoSev |
     (.quality.reviewPolicy.minConfidenceForAutoEnqueue // 0.75) as $minConf |
     [
       (.quality.findings // [])[] |
@@ -2437,11 +2437,11 @@ reconcile_review_findings() {
   ' "$prd_file" > "${prd_file}.tmp" && mv "${prd_file}.tmp" "$prd_file"
 }
 
-# Return count of open blocking findings (critical/high severities).
+# Return count of open blocking findings (auto-enqueue severities).
 count_open_blocking_review_findings() {
   local prd_file="${1:-prd.json}"
   jq -r '
-    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical", "high"]) as $autoSev |
+    (.quality.reviewPolicy.autoEnqueueSeverities // ["critical"]) as $autoSev |
     [
       (.quality.findings // [])[] |
       select((.status // "open") == "open") |

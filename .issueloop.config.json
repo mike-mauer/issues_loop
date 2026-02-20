@@ -40,12 +40,10 @@
   "review": {
     "enabled": true,
     "autoEnqueueSeverities": [
-      "critical",
-      "high"
+      "critical"
     ],
     "approvalRequiredSeverities": [
-      "medium",
-      "low"
+      "high"
     ],
     "minConfidenceForAutoEnqueue": 0.75,
     "maxFindingsPerReview": 5

@@ -57,8 +57,8 @@ The implementation lane and review lane run in parallel:
 - The orchestrator is the only writer that can enqueue follow-up tasks.
 
 ### Severity Routing
-- `critical`/`high` findings above confidence threshold auto-enqueue tasks.
-- `medium`/`low` findings remain open for explicit approval.
+- `critical` findings above confidence threshold auto-enqueue tasks.
+- `high` findings remain open for explicit approval.
 - Findings are deduplicated by stable key: `reviewId:findingId`.
 
 ### Final Gate
@@ -71,7 +71,7 @@ The implementation lane and review lane run in parallel:
 /il_2_implement              # Create branch if needed + launch background loop
 /il_2_implement verify       # Re-run verification for current task
 /il_2_implement review-status # Show review lane summary (findings by severity/status)
-/il_2_implement review-approve <reviewId> <findingId|all> # Approve medium/low findings for enqueue
+/il_2_implement review-approve <reviewId> <findingId|all> # Approve high findings for enqueue
 ```
 
 **Default execution mode is Loop Mode.** This command:

@@ -539,7 +539,7 @@ quality_mode=$(jq -r '.quality.reviewMode' "$TEST_DIR/prd-legacy.json")
 assert_eq "$quality_mode" "hybrid" "5i: quality.reviewMode initialized"
 
 quality_auto=$(jq -r '.quality.reviewPolicy.autoEnqueueSeverities | join(",")' "$TEST_DIR/prd-legacy.json")
-assert_eq "$quality_auto" "critical,high" "5i: autoEnqueueSeverities initialized"
+assert_eq "$quality_auto" "critical" "5i: autoEnqueueSeverities initialized"
 
 quality_threshold=$(jq -r '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$TEST_DIR/prd-legacy.json")
 assert_eq "$quality_threshold" "0.75" "5i: minConfidenceForAutoEnqueue initialized"
@@ -726,8 +726,8 @@ cat > "$TEST_DIR/prd-review.json" << 'FIXTURE'
   "quality": {
     "reviewMode": "hybrid",
     "reviewPolicy": {
-      "autoEnqueueSeverities": ["critical", "high"],
-      "approvalRequiredSeverities": ["medium", "low"],
+      "autoEnqueueSeverities": ["critical"],
+      "approvalRequiredSeverities": ["high"],
       "minConfidenceForAutoEnqueue": 0.75,
       "maxFindingsPerReview": 5
     },
@@ -755,7 +755,7 @@ cat > "$TEST_DIR/prd-review.json" << 'FIXTURE'
 }
 FIXTURE
 
-REVIEW_EVENT='{"v":1,"type":"review_log","issue":101,"reviewId":"rev_demo_001","scope":"task","parentTaskId":"US-001","parentTaskUid":"tsk_parent_review","reviewedCommit":"abc999","status":"completed","findings":[{"id":"RF-001","severity":"high","confidence":0.9,"category":"production_readiness","title":"Timeout missing","description":"No timeout on external request.","evidence":[{"file":"src/client.ts","line":12}],"suggestedTask":{"title":"Add timeout","description":"Add timeout and error handling","acceptanceCriteria":["Timeout is enforced"],"verifyCommands":["echo ok"],"dependsOn":[]}},{"id":"RF-002","severity":"medium","confidence":0.8,"category":"efficiency","title":"Hot path alloc","description":"Repeated allocation in loop.","evidence":[{"file":"src/hot.ts","line":22}]}],"ts":"2026-02-16T12:00:00Z"}'
+REVIEW_EVENT='{"v":1,"type":"review_log","issue":101,"reviewId":"rev_demo_001","scope":"task","parentTaskId":"US-001","parentTaskUid":"tsk_parent_review","reviewedCommit":"abc999","status":"completed","findings":[{"id":"RF-001","severity":"critical","confidence":0.9,"category":"production_readiness","title":"Timeout missing","description":"No timeout on external request.","evidence":[{"file":"src/client.ts","line":12}],"suggestedTask":{"title":"Add timeout","description":"Add timeout and error handling","acceptanceCriteria":["Timeout is enforced"],"verifyCommands":["echo ok"],"dependsOn":[]}},{"id":"RF-002","severity":"high","confidence":0.8,"category":"efficiency","title":"Hot path alloc","description":"Repeated allocation in loop.","evidence":[{"file":"src/hot.ts","line":22}]}],"ts":"2026-02-16T12:00:00Z"}'
 
 ingested_first=$(ingest_review_findings_into_prd "$TEST_DIR/prd-review.json" "$REVIEW_EVENT" 101)
 assert_eq "$ingested_first" "2" "7a: Ingests two new findings from review event"
@@ -768,7 +768,7 @@ assert_eq "$processed_keys_count" "2" "7c: processedReviewKeys tracks unique fin
 
 enqueuable=$(build_enqueuable_review_tasks "$TEST_DIR/prd-review.json")
 enqueuable_count=$(echo "$enqueuable" | jq 'length')
-assert_eq "$enqueuable_count" "1" "7d: Only high/critical findings above threshold are auto-enqueue candidates"
+assert_eq "$enqueuable_count" "1" "7d: Only critical findings above threshold are auto-enqueue candidates"
 
 enq_key=$(echo "$enqueuable" | jq -r '.[0].key')
 mark_enqueued_findings "$TEST_DIR/prd-review.json" "$(jq -nc --arg k "$enq_key" '[$k]')"
@@ -777,7 +777,7 @@ enq_status=$(jq -r --arg k "$enq_key" '.quality.findings[] | select(.key == $k) 
 assert_eq "$enq_status" "enqueued" "7e: mark_enqueued_findings updates status to enqueued"
 
 blocking_open_count=$(count_open_blocking_review_findings "$TEST_DIR/prd-review.json")
-assert_eq "$blocking_open_count" "0" "7f: Enqueued high finding is no longer counted as open blocker"
+assert_eq "$blocking_open_count" "0" "7f: Enqueued critical finding is no longer counted as open blocker"
 
 echo ""
 

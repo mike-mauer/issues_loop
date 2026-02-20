@@ -325,8 +325,8 @@ Review dimensions in strict order:
 Output requirements:
 - Summary <= 80 words.
 - Max ${REVIEW_MAX_FINDINGS} findings, highest severity first.
-- Each finding MUST include: id, severity(critical|high|medium|low), confidence(0-1), category(adherence|efficiency|pattern_reuse|production_readiness|security), title, description, evidence(file+line).
-- Include suggestedTask ONLY for critical/high findings.
+- Each finding MUST include: id, severity(critical|high), confidence(0-1), category(adherence|efficiency|pattern_reuse|production_readiness|security), title, description, evidence(file+line).
+- Include suggestedTask ONLY for critical findings.
 - If no material risk: findings must be [].
 
 Return exactly:
@@ -399,7 +399,7 @@ spawn_task_review_agent() {
   return 0
 }
 
-# Ingest posted review events and auto-enqueue high-severity findings.
+# Ingest posted review events and auto-enqueue configured severities.
 process_review_lane() {
   [ "$REVIEW_ENABLED" = "true" ] || return 0
 
@@ -527,8 +527,8 @@ BRANCH=$(jq -r '.branchName' "$PRD_FILE")
 
 # Sync quality review policy from config (single source of defaults).
 if [ "$REVIEW_ENABLED" = "true" ] && [ -f "$CONFIG_FILE" ]; then
-  jq --argjson auto "$(jq -c '.review.autoEnqueueSeverities // ["critical","high"]' "$CONFIG_FILE" 2>/dev/null || echo '["critical","high"]')" \
-     --argjson approval "$(jq -c '.review.approvalRequiredSeverities // ["medium","low"]' "$CONFIG_FILE" 2>/dev/null || echo '["medium","low"]')" \
+  jq --argjson auto "$(jq -c '.review.autoEnqueueSeverities // ["critical"]' "$CONFIG_FILE" 2>/dev/null || echo '["critical"]')" \
+     --argjson approval "$(jq -c '.review.approvalRequiredSeverities // ["high"]' "$CONFIG_FILE" 2>/dev/null || echo '["high"]')" \
      --argjson min_conf "$(jq -c '.review.minConfidenceForAutoEnqueue // 0.75' "$CONFIG_FILE" 2>/dev/null || echo '0.75')" \
      --argjson max_findings "$(jq -c '.review.maxFindingsPerReview // 5' "$CONFIG_FILE" 2>/dev/null || echo '5')" \
      '.quality.reviewPolicy.autoEnqueueSeverities = $auto |
