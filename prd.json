@@ -73,7 +73,25 @@
     "bash -n .agents/skills/issues-loop/scripts/implement-loop.sh && echo \"agents syntax ok\""
   ],
   "memory": {
-    "patterns": []
+    "patterns": [
+      {
+        "key": "ptn_e9f0a5080243",
+        "statement": "Subshells inherit parent shell vars; no export needed for ISSUE_NUMBER",
+        "scope": ".claude/scripts/implement-loop.sh",
+        "files": [
+          ".claude/scripts/implement-loop.sh"
+        ],
+        "confidence": 0.95,
+        "issue": 19,
+        "taskId": "US-001",
+        "taskUid": "tsk_4bce0322e39d",
+        "commit": "4607906",
+        "createdAt": "2026-02-20T23:45:00Z",
+        "syncedDocs": [
+          "/Users/mikemauer/Projects/Issues Loop/.claude/CLAUDE.md"
+        ]
+      }
+    ]
   },
   "quality": {
     "reviewMode": "hybrid",
