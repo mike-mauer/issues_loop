@@ -125,10 +125,10 @@
     "findings": [],
     "processedReviewKeys": [],
     "finalReview": {
-      "status": "running",
+      "status": "failed",
       "reviewedCommit": "ca4ef1f",
       "lastReviewId": null,
-      "updatedAt": "2026-02-20T23:29:08Z"
+      "updatedAt": "2026-02-20T23:30:33Z"
     },
     "execution": {
       "consecutiveRetries": 0,
