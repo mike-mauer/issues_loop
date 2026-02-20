@@ -62,9 +62,9 @@
         "count=$(grep -c \"_post_review_to_github\" .agents/skills/issues-loop/scripts/implement-loop.sh); [ \"$count\" -ge 3 ] && echo \"OK: $count occurrences\" || (echo \"FAIL: only $count occurrences\"; exit 1)",
         "bash -n .agents/skills/issues-loop/scripts/implement-loop.sh && echo \"syntax ok\""
       ],
-      "passes": false,
-      "attempts": 0,
-      "lastAttempt": null,
+      "passes": true,
+      "attempts": 1,
+      "lastAttempt": "2026-02-20T23:27:06Z",
       "requiresBrowserVerification": false
     }
   ],
@@ -132,11 +132,11 @@
     },
     "execution": {
       "consecutiveRetries": 0,
-      "currentTaskId": "US-001",
+      "currentTaskId": "US-002",
       "currentTaskRetryStreak": 0,
       "lastReplanAt": "2026-02-20T23:19:43Z",
       "lastReplanReason": "same task retries reached 2",
-      "tasksSinceFullVerify": 1,
+      "tasksSinceFullVerify": 2,
       "lastFullVerifyCommit": null,
       "lastFullVerifyAt": null,
       "lastAutoReplanAt": "2026-02-20T23:19:43Z",
