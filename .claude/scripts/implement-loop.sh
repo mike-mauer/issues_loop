@@ -344,6 +344,18 @@ Final line exactly one of:
 EOF
 }
 
+# Extract the ## 🔎 Code Review: block from review agent output and post it as a
+# GitHub issue comment so verify_review_log_on_github can find it.
+# Args: $1 - full captured output from the review agent
+_post_review_to_github() {
+  local output="$1"
+  local review_block
+  review_block=$(printf '%s\n' "$output" | awk '/^## 🔎 Code Review:/{found=1} found{print}')
+  if [ -n "$review_block" ]; then
+    gh issue comment "$ISSUE_NUMBER" --body "$review_block" 2>/dev/null || true
+  fi
+}
+
 # Run a review agent invocation. mode: async|sync
 spawn_task_review_agent() {
   local scope_label="$1"
@@ -379,6 +391,7 @@ spawn_task_review_agent() {
           echo "Review invocation exited with non-zero status: $exit_code"
         fi
       } >> "$REVIEW_LOG_FILE"
+      _post_review_to_github "$output"
     ) &
     log "$ICON_INFO Review agent spawned for $scope_label"
     return 0
@@ -393,6 +406,7 @@ spawn_task_review_agent() {
     echo "$output" | tail -120
     echo "--- End review output ---"
   } >> "$REVIEW_LOG_FILE"
+  _post_review_to_github "$output"
   if [ $exit_code -ne 0 ] && [ -z "$output" ]; then
     return 1
   fi
