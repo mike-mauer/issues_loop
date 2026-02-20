@@ -96,17 +96,20 @@
       "updatedAt": null
     },
     "execution": {
-      "consecutiveRetries": 2,
-      "currentTaskId": "US-001",
-      "currentTaskRetryStreak": 2,
-      "lastReplanAt": null,
-      "lastReplanReason": null,
+      "consecutiveRetries": 0,
+      "currentTaskId": null,
+      "currentTaskRetryStreak": 0,
+      "lastReplanAt": "2026-02-20T23:19:43Z",
+      "lastReplanReason": "same task retries reached 2",
       "tasksSinceFullVerify": 0,
       "lastFullVerifyCommit": null,
       "lastFullVerifyAt": null,
-      "lastAutoReplanAt": null,
-      "lastAutoReplanReason": null,
-      "lastAutoReplanResult": null
+      "lastAutoReplanAt": "2026-02-20T23:19:43Z",
+      "lastAutoReplanReason": "same task retries reached 2",
+      "lastAutoReplanResult": "generation_failed"
     }
+  },
+  "debugState": {
+    "status": "replan_required"
   }
 }
