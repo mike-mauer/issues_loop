@@ -203,9 +203,9 @@
     ],
     "finalReview": {
       "status": "running",
-      "reviewedCommit": "dc327c5",
+      "reviewedCommit": "6c6ab14",
       "lastReviewId": null,
-      "updatedAt": "2026-02-20T23:32:24Z"
+      "updatedAt": "2026-02-20T23:54:36Z"
     },
     "execution": {
       "consecutiveRetries": 0,
