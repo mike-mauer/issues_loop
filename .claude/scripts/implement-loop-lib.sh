@@ -171,7 +171,7 @@ initialize_missing_prd_fields() {
       "reviewMode": "hybrid",
       "reviewPolicy": {
         "autoEnqueueSeverities": ["critical"],
-        "approvalRequiredSeverities": ["high"],
+        "approvalRequiredSeverities": ["critical"],
         "minConfidenceForAutoEnqueue": 0.75,
         "maxFindingsPerReview": 5
       },
@@ -195,7 +195,7 @@ initialize_missing_prd_fields() {
   if jq -e '.quality.reviewPolicy' "$tmp_file" >/dev/null 2>&1; then :; else
     jq '.quality.reviewPolicy = {
       "autoEnqueueSeverities": ["critical"],
-      "approvalRequiredSeverities": ["high"],
+      "approvalRequiredSeverities": ["critical"],
       "minConfidenceForAutoEnqueue": 0.75,
       "maxFindingsPerReview": 5
     }' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
@@ -206,7 +206,7 @@ initialize_missing_prd_fields() {
     needs_update=1
   fi
   if jq -e '.quality.reviewPolicy.approvalRequiredSeverities' "$tmp_file" >/dev/null 2>&1; then :; else
-    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["high"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    jq '.quality.reviewPolicy.approvalRequiredSeverities = ["critical"]' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
   if jq -e '.quality.reviewPolicy.minConfidenceForAutoEnqueue' "$tmp_file" >/dev/null 2>&1; then :; else

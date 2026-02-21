@@ -1,6 +1,6 @@
 # Custom Planning Protocol
 
-This protocol replaces Claude Code's native `EnterPlanMode`/`ExitPlanMode` with a custom 5-phase planning system that integrates seamlessly with the GitHub Issue Workflow.
+This protocol defines a custom 5-phase planning system that integrates seamlessly with the GitHub Issue Workflow. It replaces native plan mode with explicit phases, adaptive checkpoints, and full visibility into the planning process.
 
 ## Why This Protocol Exists
 
@@ -11,7 +11,7 @@ Native plan mode is too opaque - we can't control:
 - prd.json generation timing
 - Resumability if session ends mid-planning
 
-This protocol provides explicit phases, `AskUserQuestion` checkpoints, and full visibility into the planning process.
+This protocol provides explicit phases, score-adaptive checkpoints, and full visibility into the planning process.
 
 ---
 
@@ -48,6 +48,30 @@ Phase 5: PRD.JSON GENERATION
 └─ Checkpoint: "Ready to implement?"
 ```
 
+### Checkpoint Modes (by Completeness Score)
+
+Use the score from `/il_1_plan` Step 3:
+
+| Score | Mode | Required user checkpoints |
+|-------|------|---------------------------|
+| **9-10** | Fast Lane A | 1 checkpoint total: combined approval + start |
+| **7-8** | Fast Lane B | 2 checkpoints: task breakdown + combined approval + start |
+| **0-6** | Full Lane | All phase checkpoints |
+
+In Fast Lane modes, still execute all 5 phases. The reduction applies only to user prompts, not quality checks.
+
+### Combined Approval + Start Prompt
+
+For Fast Lane modes, replace separate Phase 4 and Phase 5 prompts with one combined checkpoint after `prd.json` is generated:
+
+```
+Question: "Plan approved, prd.json is generated, and branch is ready. Start implementation now?"
+Options:
+  1. "Yes, run /il_2_implement" - Approve and start now
+  2. "Approved, start later" - Approve but stop after planning
+  3. "Changes needed" - Return to plan edits
+```
+
 ---
 
 ## Phase 1: Exploration
@@ -59,10 +83,10 @@ Phase 5: PRD.JSON GENERATION
 1. **Read the issue** - Understand requirements, acceptance criteria, scope
 2. **Detect formula type** - Classify the issue as bugfix, feature, or refactor:
    - Check issue labels first (highest priority): `bug`/`regression`/`defect` → bugfix, `refactor`/`tech-debt`/`cleanup` → refactor, `feature`/`enhancement`/`new` → feature
-   - If no label match, scan issue title + body for keywords (see `il_1_plan.md` Step 2b for full decision tree)
+   - If no label match, scan issue title + body for keywords (see `.claude/commands/il_1_plan.md` Step 2b for full decision tree)
    - Default to `feature` when ambiguous
    - Load the matching formula template from `templates/formulas/{formula}.md` — this guides task topology in Phase 2
-3. **Explore the codebase** using Grep, Glob, Read tools:
+3. **Explore the codebase** using search and file reading tools:
    - Find relevant existing files
    - Identify patterns and conventions
    - Locate similar features for reference
@@ -124,6 +148,10 @@ Options:
 **On "Yes":** Proceed to Phase 2
 **On "Explore more":** Ask what to investigate, return to exploration
 **On "Different focus":** Ask where to focus, restart exploration
+
+Fast-lane behavior:
+- **Skip this checkpoint** for scores `7-10` and proceed directly to Phase 2.
+- Keep this checkpoint for scores `0-6`.
 
 ---
 
@@ -202,6 +230,11 @@ Options:
 **On "Yes":** Proceed to Phase 3
 **On other options:** Make requested changes, show updated breakdown
 
+Fast-lane behavior:
+- **Required** for scores `7-8`.
+- **Optional** for scores `9-10` (only prompt if decomposition quality is unclear or risk is high).
+- **Required** for scores `0-6`.
+
 ---
 
 ## Phase 3: Design Validation
@@ -269,6 +302,10 @@ Options:
 **On "Yes":** Apply recommended fixes, proceed to Phase 4
 **On "I'll fix":** Proceed without changes
 **On "Review":** Show detailed issue breakdown
+
+Fast-lane behavior:
+- **Skip this checkpoint** for scores `7-10` after applying objective validation fixes.
+- Keep this checkpoint for scores `0-6`.
 
 ---
 
@@ -339,6 +376,10 @@ Options:
 **On "Changes needed":** Ask what to change, update plan
 **On "Review":** Pause, user will return later
 
+Fast-lane behavior:
+- For scores `7-10`, do not prompt here. Continue to Phase 5 and use the combined approval + start prompt there.
+- For scores `0-6`, keep this checkpoint.
+
 ---
 
 ## Phase 5: prd.json Generation
@@ -348,7 +389,7 @@ Options:
 ### What To Do
 
 1. **Parse the plan** - Extract all task fields from the markdown
-2. **Generate prd.json** following the schema in planning-guide.md
+2. **Generate prd.json** following the schema in `.claude/rules/planning-guide.md`
 3. **Create branch** if it doesn't exist: `ai/issue-{N}-{slug}`
 4. **Commit prd.json** with message: `chore: add prd.json for issue #{N}`
 5. **Push to remote**
@@ -409,6 +450,10 @@ Options:
 **On "Yes":** Suggest running `/il_2_implement` or `/il_2_implement start`
 **On "Not yet":** End planning, user can return with `/il_1_plan N --quick`
 
+Fast-lane behavior:
+- For scores `7-10`, replace this prompt with the combined approval + start prompt defined above.
+- For scores `0-6`, keep this checkpoint.
+
 ---
 
 ## Resuming Mid-Planning
@@ -431,17 +476,15 @@ The `/il_1_plan` command's Step 4 (Planning Phase) should:
 
 1. Reference this protocol: "Follow `.claude/rules/custom-planning-protocol.md`"
 2. Execute phases in order
-3. Use `AskUserQuestion` for all checkpoints
-4. NOT use `EnterPlanMode` or `ExitPlanMode`
+3. Use `AskUserQuestion` for checkpoints according to score mode
+4. NOT use native plan mode directly (`EnterPlanMode` / `ExitPlanMode`)
 
 ---
 
 ## Quick Reference: Checkpoint Questions
 
-| Phase | Question | Key Options |
-|-------|----------|-------------|
-| 1 | "Exploration complete. Ready to proceed?" | Proceed / Explore more |
-| 2 | "Task breakdown complete. Does this look right?" | Proceed / Split task / Merge |
-| 3 | "Validation complete. Ready to finalize?" | Apply fixes / Keep as-is |
-| 4 | "Plan posted to GitHub. Approve?" | Approved / Changes needed |
-| 5 | "prd.json generated. Ready to implement?" | Yes / Not yet |
+| Mode | Checkpoint Sequence |
+|------|---------------------|
+| **Fast Lane A (9-10)** | Combined approval + start only |
+| **Fast Lane B (7-8)** | Phase 2 checkpoint → Combined approval + start |
+| **Full Lane (0-6)** | Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 |

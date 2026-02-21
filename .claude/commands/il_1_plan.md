@@ -1,4 +1,4 @@
-# /il_1_plan - Load, Scope, and Plan GitHub Issue
+# /il_1_plan — Load, Scope, and Plan GitHub Issue
 
 ## Description
 Loads a GitHub issue, evaluates completeness, gathers missing requirements via scoping questions, and guides through planning and approval. This is Step 1 of the core workflow - it handles the full journey from issue to approved plan.
@@ -11,7 +11,7 @@ Loads a GitHub issue, evaluates completeness, gathers missing requirements via s
 ```
 
 ## Arguments
-- `$ARGUMENTS` - Issue number (with or without #), optionally followed by `--quick`
+- Issue number (with or without #), optionally followed by `--quick`
 
 ---
 
@@ -144,13 +144,14 @@ ACCEPTANCE (0-2):
 
 | Score | Action |
 |-------|--------|
-| **8-10** | Well-defined → Proceed to Step 4 (state detection) |
-| **5-7** | Minor gaps → Ask 1-2 targeted questions |
+| **9-10** | Well-defined → Skip scoping and use Fast Lane A (single checkpoint) |
+| **7-8** | Mostly defined → Skip scoping and use Fast Lane B (two checkpoints) |
+| **5-6** | Minor gaps → Ask 1 targeted question |
 | **0-4** | Needs scoping → Ask up to 3 questions |
 
-### Step 3b: Scoping Questions (if score < 8)
+### Step 3b: Scoping Questions (if score < 7)
 
-Use the AskUserQuestion tool with multiple-choice options. Ask only about the gaps identified.
+Use `AskUserQuestion` with multiple-choice options. Ask only about the gaps identified.
 
 **Principles:**
 - Max 3 questions total
@@ -176,7 +177,7 @@ First, scan codebase for relevant directories:
 ls -d src/*/ 2>/dev/null | head -5
 ```
 
-Then ask:
+Then prompt the user:
 ```
 Question: "Where should this change happen?"
 Options:
@@ -230,7 +231,7 @@ After gathering answers, summarize:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Then ask for confirmation:
+Then prompt the user for confirmation:
 ```
 Question: "Does this capture what you need?"
 Options:
@@ -242,7 +243,7 @@ If user confirms, proceed to **Step 4: Planning Phase**.
 
 ### Step 4: Planning Phase
 
-When requirements are confirmed (or issue scored 8+), transition to planning.
+When requirements are confirmed (or issue scored 7+), transition to planning.
 
 **Follow the Custom Planning Protocol:** See `.claude/rules/custom-planning-protocol.md` for the complete 5-phase planning system.
 
@@ -255,31 +256,31 @@ The formula detected in Step 2b guides the entire planning process:
 
 #### Protocol Overview
 
-Execute these phases in order, using `AskUserQuestion` for checkpoints:
+Execute these phases in order, using `AskUserQuestion` with score-adaptive checkpoints:
 
 ```
 Phase 1: EXPLORATION
 ├─ Analyze codebase (patterns, conventions, relevant files)
 ├─ Confirm formula detection (from Step 2b)
 ├─ Display Discovery Summary to user
-└─ Checkpoint: "Exploration complete. Ready to proceed?"
+└─ Checkpoint: Full Lane only
 
 Phase 2: TASK DECOMPOSITION
 ├─ Break into right-sized tasks (2-3 sentence rule)
 ├─ Define acceptance criteria + verify commands
 ├─ Show dependency graph
-└─ Checkpoint: "Task breakdown complete. Does this look right?"
+└─ Checkpoint: Full Lane + Fast Lane B
 
 Phase 3: DESIGN VALIDATION
 ├─ Validate all tasks are context-window-sized
 ├─ Check acceptance criteria are testable (not subjective)
 ├─ Verify commands exist/work
-└─ Checkpoint: "Validation complete. Ready to finalize?"
+└─ Checkpoint: Full Lane only
 
 Phase 4: GITHUB POSTING
 ├─ Post plan as `## 📋 Implementation Plan` comment
 ├─ Add "AI: Planning" label
-└─ Checkpoint: "Plan posted to GitHub. Approve?"
+└─ Checkpoint: Full Lane only
 
 Phase 5: PRD.JSON GENERATION
 ├─ Parse plan → generate prd.json
@@ -287,22 +288,27 @@ Phase 5: PRD.JSON GENERATION
 ├─ Commit and push prd.json
 ├─ Post `## ✅ Plan Approved` comment
 ├─ Update label to "AI: Approved"
-└─ Checkpoint: "prd.json generated. Ready to implement?"
+└─ Checkpoint: Full Lane prompt OR Fast Lane combined approval + start
 ```
+
+Checkpoint policy by score:
+- **Fast Lane A (9-10):** one prompt total - combined approval + start in Phase 5
+- **Fast Lane B (7-8):** two prompts - Phase 2 checkpoint + combined approval + start in Phase 5
+- **Full Lane (0-6):** all five checkpoints
 
 #### Key Rules
 
 1. **Do NOT use native plan mode tools** - Use the custom protocol instead
-2. **Use `AskUserQuestion`** for all checkpoints with multiple options
+2. **Use `AskUserQuestion`** according to score lane (Fast Lane A/B or Full Lane)
 3. **Follow the plan format** in `.claude/rules/planning-guide.md`
 4. **Post to GitHub** at Phase 4 for persistence and visibility
-5. **Generate prd.json** at Phase 5 following the schema in planning-guide.md
+5. **Generate prd.json** at Phase 5 following the schema in `.claude/rules/planning-guide.md`
 6. **Apply the detected formula** - Use `templates/formulas/{formula}.md` to guide task topology
 7. **Persist formula** - Set `prd.json.formula` to the selected formula type (bugfix, feature, or refactor)
 
 #### Task Format Reference
 
-Each task must include (see planning-guide.md for full details):
+Each task must include (see `.claude/rules/planning-guide.md` for full details):
 
 ```markdown
 ### US-001: {Task title}
@@ -337,7 +343,7 @@ If any task exceeds limits, split the task before generating `prd.json`.
 If returning to an issue mid-planning:
 - Check GitHub comments for last posted plan/status
 - Check if prd.json exists
-- Resume from the appropriate phase (see protocol doc)
+- Resume from the appropriate phase (see `.claude/rules/custom-planning-protocol.md`)
 
 ### Step 5: Determine Issue State (for returning issues)
 
@@ -348,9 +354,9 @@ Based on labels and comments, determine current state:
 | Condition | State | Next Action |
 |-----------|-------|-------------|
 | Has `AI` label, no plan/prd.json | Needs Planning | Go to Step 4 |
-| Has prd.json, no task logs | Ready to Implement | Suggest `/implement` |
-| Has prd.json + partial task logs | In Progress | Show progress, suggest `/implement` |
-| All tasks passing | Ready for Testing | Suggest `/implement` for testing checkpoint |
+| Has prd.json, no task logs | Ready to Implement | Suggest `/il_2_implement` |
+| Has prd.json + partial task logs | In Progress | Show progress, suggest `/il_2_implement` |
+| All tasks passing | Ready for Testing | Suggest `/il_2_implement` for testing checkpoint |
 
 ### Step 6: Parse Issue Comments
 
@@ -393,7 +399,7 @@ Check if implementation branch exists:
 git branch --list "ai/issue-$ISSUE_NUMBER-*"
 ```
 
-If branch exists, offer to check it out. If not, note that `/implement` will create it.
+If branch exists, offer to check it out. If not, note that `/il_2_implement` will create it.
 
 ---
 
@@ -444,13 +450,9 @@ Completeness: ████████░░ 9/10
 
 Looks good! This issue is well-defined.
 
-→ Ready to create an implementation plan?
-→ [User confirms]
-→ [Planning...]
-→ Plan ready - approve?
-→ [User approves]
+→ [Planning phases run with fast-lane prompts]
 → ✅ prd.json generated
-→ Ready to start implementation?
+→ Plan approved and branch ready. Start implementation now?
 ```
 
 ### Vague Issue (Score: 2/10)
@@ -482,7 +484,7 @@ This issue needs a bit more detail. Let me ask a few quick questions...
 ### Returning to In-Progress Issue
 
 ```bash
-/issue 42 --quick
+/il_1_plan 42 --quick
 ```
 
 Flow:
@@ -504,7 +506,7 @@ Run /il_2_implement to continue with US-002
 
 ## Tips
 
-- `/issue 42` - Load a new issue or re-scope an existing one
-- `/issue 42 --quick` - Jump straight to status check for in-progress issues
-- The full flow: scope → plan → approve → implement
+- `/il_1_plan 42` - Load a new issue or re-scope an existing one
+- `/il_1_plan 42 --quick` - Jump straight to status check for in-progress issues
+- The flow is score-adaptive: fast lane for high-quality issues, full lane for ambiguous issues
 - Task logs in issue comments serve as memory between sessions

@@ -579,7 +579,7 @@ BRANCH=$(jq -r '.branchName' "$PRD_FILE")
 # Sync quality review policy from config (single source of defaults).
 if [ "$REVIEW_ENABLED" = "true" ] && [ -f "$CONFIG_FILE" ]; then
   jq --argjson auto "$(jq -c '.review.autoEnqueueSeverities // ["critical"]' "$CONFIG_FILE" 2>/dev/null || echo '["critical"]')" \
-     --argjson approval "$(jq -c '.review.approvalRequiredSeverities // ["high"]' "$CONFIG_FILE" 2>/dev/null || echo '["high"]')" \
+     --argjson approval "$(jq -c '.review.approvalRequiredSeverities // ["critical"]' "$CONFIG_FILE" 2>/dev/null || echo '["critical"]')" \
      --argjson min_conf "$(jq -c '.review.minConfidenceForAutoEnqueue // 0.75' "$CONFIG_FILE" 2>/dev/null || echo '0.75')" \
      --argjson max_findings "$(jq -c '.review.maxFindingsPerReview // 5' "$CONFIG_FILE" 2>/dev/null || echo '5')" \
      '.quality.reviewPolicy.autoEnqueueSeverities = $auto |
