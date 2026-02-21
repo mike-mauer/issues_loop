@@ -68,7 +68,7 @@ The implementation lane and review lane run in parallel:
 
 ## Usage
 ```
-/il_2_implement              # Create branch if needed + launch background loop
+/il_2_implement              # Create branch if needed + print terminal launch command
 /il_2_implement verify       # Re-run verification for current task
 /il_2_implement review-status # Show review lane summary (findings by severity/status)
 /il_2_implement review-approve <reviewId> <findingId|all> # Approve high findings for enqueue
@@ -76,7 +76,7 @@ The implementation lane and review lane run in parallel:
 
 **Default execution mode is Loop Mode.** This command:
 1. Creates the branch from `prd.json` if it doesn't exist
-2. Launches `.claude/scripts/implement-loop.sh` for fresh context per task
+2. Prompts the user to run `.claude/scripts/implement-loop.sh` in a separate terminal for fresh context per task
 
 ### ⚠️ Escape Hatch (Breaks Fresh Context)
 ```
@@ -185,13 +185,13 @@ If you complete a task without posting to GitHub, the task is NOT complete. Go b
 
 ## ⚠️ MODE SELECTION - READ THIS FIRST
 
-**You MUST launch the background script.** There is no interactive mode by default.
+**You MUST require terminal launch of the background script.** There is no interactive mode by default.
 
 ### Argument Check (Do This Immediately)
 
 | Argument | Action | Go To |
 |----------|--------|-------|
-| (none) | Create branch if needed + launch script | → "Loop Mode" section |
+| (none) | Create branch if needed + show terminal launch command | → "Loop Mode" section |
 | `verify` | Re-run verification commands only | → "Step 5: Run Verification" |
 | `interactive-mode` | ⚠️ ESCAPE HATCH - breaks fresh context | → "Interactive Mode" section |
 
@@ -294,7 +294,7 @@ This command is designed to work **without memory** of previous runs. Context co
 
 **If you are running `/implement` with no arguments, you MUST follow this section.**
 
-You MUST launch the background script. Do NOT execute tasks interactively.
+You MUST have the user launch the background script from a separate terminal. Do NOT execute tasks interactively.
 
 ### Step L1: Create Branch If Needed
 
@@ -326,16 +326,14 @@ if [ ! -f .claude/scripts/implement-loop.sh ]; then
 fi
 ```
 
-### Step L3: Launch Background Script
+### Step L3: Provide Terminal Launch Command (Do NOT Execute It Here)
 
 ```bash
 # Make script executable if needed
 chmod +x .claude/scripts/implement-loop.sh
 
-# Run in background, output to log
-nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 &
-LOOP_PID=$!
-echo $LOOP_PID > .claude/implement-loop.pid
+# User must run this in a separate terminal (not inside Claude Code):
+nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 & echo $! > .claude/implement-loop.pid
 ```
 
 ### Step L4: Inform User and STOP
@@ -343,23 +341,23 @@ echo $LOOP_PID > .claude/implement-loop.pid
 Output this message and then STOP (do not continue to Implementation Loop):
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔄 Implementation loop started (PID: $LOOP_PID)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Claude Code cannot run nested Claude sessions safely. Start the loop in your terminal:
+
+  chmod +x .claude/scripts/implement-loop.sh
+  nohup .claude/scripts/implement-loop.sh > /dev/null 2>&1 & echo $! > .claude/implement-loop.pid
+
+After launching, monitor progress:
+  tail -f .claude/implement-loop.log
+
+To stop the loop:
+  kill $(cat .claude/implement-loop.pid)
 
 The loop runs in the background until:
   ✅ All tasks pass → testing checkpoint
   ⛔ A task is blocked → needs your input
   ⚠️  Max iterations → safety stop
 
-Monitor progress:
-  tail -f .claude/implement-loop.log
-
-Stop the loop:
-  kill $(cat .claude/implement-loop.pid)
-
-When done, run /implement to continue.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When done, run /il_2_implement to continue.
 ```
 
 **STOP HERE if in Loop Mode.** Do not proceed to Implementation Loop.
