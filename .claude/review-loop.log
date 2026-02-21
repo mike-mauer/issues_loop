@@ -1,0 +1,148 @@
+--- Review output for US-001 (4607906) ---
+## 🔎 Code Review: US-001
+
+### Summary
+The fix correctly targets the root cause: review output is now posted to GitHub so `verify_review_log_on_github` can find it. Function placement, awk extraction pattern, and subshell variable inheritance are all correct. One structural risk: `2>/dev/null || true` on the `gh issue comment` call makes posting failures invisible to the loop, which can silently recreate the original infinite retry under GitHub API errors.
+
+### Findings
+
+**F1 — HIGH | production_readiness | confidence: 0.85**
+**Title:** Silent gh failure can recreate original infinite retry bug
+
+**Description:** `_post_review_to_github` calls `gh issue comment ... 2>/dev/null || true`, suppressing all errors and always returning 0. If `gh` fails (expired token, network error, rate limit), the function silently succeeds, `verify_review_log_on_github` finds no comment, `FINAL_EVENT` is empty, and the gate loop `continue`s at line 606–608 — restarting the final review gate on the next iteration. The fix resolves the bug only when `gh` works; under API errors the symptom is identical to the original issue with no observable signal.
+
+**Evidence:** `.claude/scripts/implement-loop.sh` lines 354–356 (`|| true` suppresses gh exit code); lines 602–608 (`continue` on empty `FINAL_EVENT` re-enters outer loop).
+
+**Suggested fix (suggestedTask):** Add a log-level warning on gh failure — e.g., replace the current line with:
+```bash
+gh issue comment "$ISSUE_NUMBER" --body "$review_block" 2>&1 | \
+  { read -r err; log "$ICON_WARN _post_review_to_github: gh failed: $err"; } || true
+```
+Or at minimum remove the stderr redirect so the caller's log file captures the error.
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_us001_4607906","scope":"task","parentTaskId":"US-001","parentTaskUid":"tsk_4bce0322e39d","reviewedCommit":"4607906","status":"completed","findings":[{"id":"F1","severity":"high","confidence":0.85,"category":"production_readiness","title":"Silent gh failure can recreate original infinite retry bug","evidence":{"file":".claude/scripts/implement-loop.sh","lines":[354,355,356,602,603,604,605,606,607,608]}}],"ts":"2026-02-20T23:55:00Z"}
+```
+
+<review_result>FINDINGS</review_result>
+--- End review output ---
+--- Review output for US-002 (05a99c7) ---
+The analysis is complete. The change is a clean, faithful mirror. Both copies are byte-for-byte identical in the added function and call sites; the only divergence pre-exists this commit (a comment about severity levels).
+
+## 🔎 Code Review: US-002
+### Summary
+The `.agents` copy receives an exact mirror of the US-001 fix: `_post_review_to_github()` is inserted before `spawn_task_review_agent`, called in both the async subshell and sync paths. The added code is identical to the `.claude` copy. Syntax check passes. Occurrence count is 3, satisfying the acceptance criteria. No functional differences were introduced; the only divergence between the two files is a pre-existing comment difference unrelated to this change.
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_us002_05a99c7","scope":"task","parentTaskId":"US-002","parentTaskUid":"tsk_14a849eb76ce","reviewedCommit":"05a99c7","status":"completed","findings":[],"ts":"2026-02-20T23:59:00Z"}
+```
+
+<review_result>CLEAR</review_result>
+--- End review output ---
+--- Review output for FINAL (2f962a0) ---
+## 🔎 Code Review: FINAL
+
+### Summary
+
+The fix correctly addresses the root cause: `_post_review_to_github` is added and called in both async and sync paths of `spawn_task_review_agent`, bridging the gap between local log capture and GitHub comment posting. Two material issues remain: a behavioral divergence between the `.claude` and `.agents` copies in review severity schema and auto-enqueue defaults, and silent failure handling that provides no diagnostic signal when `gh issue comment` fails.
+
+### Review Findings
+
+**F-01** — Behavioral divergence in review severity schema and auto-enqueue defaults between copies
+- **Severity:** high | **Confidence:** 0.95 | **Category:** adherence
+- The `.claude` copy's `build_review_prompt` instructs the review agent to emit only `severity(critical|high)` and `suggestedTask ONLY for critical findings`. The `.agents` copy uses `severity(critical|high|medium|low)` and `suggestedTask ONLY for critical/high findings`. Correspondingly, the `.claude` copy defaults `autoEnqueueSeverities` to `["critical"]` while `.agents` defaults to `["critical","high"]`. Projects installed from the two sources get meaningfully different review behavior—high-severity findings go unenqueued in `.claude`-installed projects.
+- **Evidence:** `.claude/scripts/implement-loop.sh:328-329,544` vs `.agents/skills/issues-loop/scripts/implement-loop.sh:328-329,544`
+
+**F-02** — Silent `gh issue comment` failure yields no diagnostic log, masking the retry root cause
+- **Severity:** high | **Confidence:** 0.85 | **Category:** production_readiness
+- `_post_review_to_github` runs `gh issue comment ... 2>/dev/null || true`. If this fails (auth expiry, network error, rate limit), nothing is logged. The caller immediately checks `verify_review_log_on_github`, finds nothing, marks `finalReview.status = "failed"`, and loops. Under persistent `gh` failure, every iteration silently repeats this sequence until `MAX_ITERATIONS` is exhausted—the same symptom as the original bug, but with a different root cause that is now invisible. Adding even a `log "$ICON_WARN _post_review_to_github: gh issue comment failed"` branch when `review_block` is non-empty but posting fails would make this diagnosable.
+- **Evidence:** `.claude/scripts/implement-loop.sh:354-355`, `.agents/skills/issues-loop/scripts/implement-loop.sh:354-355`
+
+**F-03** — `output` and `exit_code` not declared `local` in sync path of `spawn_task_review_agent`
+- **Severity:** high | **Confidence:** 0.90 | **Category:** correctness
+- In the sync path (lines 400–402), `output` and `exit_code` are assigned without `local`. In bash, non-local variables inside a function are accessible in the caller's scope after the call returns. The async path avoids this via the subshell `(...)`. No current variable name collision exists (`OUTPUT` uppercase is used in the main loop), but `output` leaking to the caller is a latent hazard for future changes. The async path's `local changed_files issue_body issue_comments prompt` declaration shows the intent to scope variables locally, making the omission of `local output exit_code` inconsistent.
+- **Evidence:** `.claude/scripts/implement-loop.sh:400-402`, `.agents/skills/issues-loop/scripts/implement-loop.sh:400-402`
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_final_2f962a0","scope":"final","parentTaskId":"FINAL","parentTaskUid":"final_review","reviewedCommit":"2f962a0","status":"completed","findings":[{"id":"F-01","severity":"high","confidence":0.95,"category":"adherence","title":"Review severity schema and auto-enqueue defaults diverge between .claude and .agents copies","description":"The .claude copy restricts prompt schema to critical|high severity and auto-enqueues only critical findings; the .agents copy allows all four severity levels and auto-enqueues critical+high. Projects installed from different sources behave differently.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"328-329,544"}},{"id":"F-02","severity":"high","confidence":0.85,"category":"production_readiness","title":"Silent gh failure in _post_review_to_github produces no diagnostic log","description":"If gh issue comment fails, || true swallows it silently. verify_review_log_on_github then finds nothing, marks final review failed, and loops—reproducing the original infinite-retry symptom with a different undiagnosable root cause.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"354-355"}},{"id":"F-03","severity":"high","confidence":0.9,"category":"correctness","title":"output and exit_code not declared local in sync path of spawn_task_review_agent","description":"In the sync path these variables are set without local, leaking to the caller's scope. The async path avoids this via subshell; the inconsistency is a latent hazard.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"400-402"}}],"ts":"2026-02-20T23:59:00Z"}
+```
+
+<review_result>FINDINGS</review_result>
+--- End review output ---
+--- Review output for FINAL (ca4ef1f) ---
+## 🔎 Code Review: FINAL
+### Summary
+The fix correctly closes the infinite-loop root cause: `_post_review_to_github` extracts the review block with awk and posts it to GitHub so `verify_review_log_on_github` can find it. Both copies receive an identical implementation. Two production-readiness issues remain: silent failure of the GitHub post recreates bounded retry pressure, and pre-existing semantic divergence between the two copies is left undocumented and deepened.
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_final_19_ca4ef1f","scope":"final","parentTaskId":"FINAL","parentTaskUid":"final_review","reviewedCommit":"ca4ef1f","status":"completed","findings":[{"id":"F-001","severity":"high","confidence":0.9,"category":"production_readiness","title":"Silent gh failure in _post_review_to_github recreates bounded loop","description":"_post_review_to_github swallows gh issue comment failures with `|| true` and emits no log entry. If the GitHub API call fails (rate limit, expired token, network error) the function returns silently, verify_review_log_on_github still finds nothing, and the loop hits `continue` again — the same retry behavior this fix was meant to stop, now bounded only by MAX_ITERATIONS=20 instead of being infinite. There is no diagnostic to distinguish 'review ran but found nothing blocking' from 'post to GitHub failed'.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"354-356"}},{"id":"F-002","severity":"high","confidence":0.8,"category":"adherence","title":"Unresolved semantic divergence between .claude and .agents copies","description":"The two copies have pre-existing but material behavioral differences not addressed or documented by this PR: `.claude` defaults autoEnqueueSeverities=[\"critical\"] while `.agents` defaults [\"critical\",\"high\"]; the review prompt severity schema differs (critical|high vs critical|high|medium|low); suggestedTask scope differs. Adding identical _post_review_to_github text to both while leaving this divergence in place makes future sync correctness harder to verify and means the loop behaves differently depending on which copy is installed.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"544"},{"file":".agents/skills/issues-loop/scripts/implement-loop.sh","line":"544"}}],"ts":"2026-02-20T23:59:00Z"}
+```
+
+<review_result>FINDINGS</review_result>
+--- End review output ---
+--- Review output for FINAL (bcb1bb7) ---
+## 🔎 Code Review: FINAL
+
+### Summary
+The fix correctly resolves the infinite retry by adding `_post_review_to_github` to bridge local log capture → GitHub comment posting, applied symmetrically to both script copies. The synchronous final-review path (fix's primary target) now posts before `verify_review_log_on_github` reads, closing the original loop. Two residual risks remain: a silent-skip failure path when review agent output lacks the expected header, and a pre-existing severity-default divergence between copies.
+
+### Findings
+
+**F1 — Silent skip reproduces original symptom on partial agent output**
+- **Severity:** high
+- **Confidence:** 0.80
+- **Category:** production_readiness
+- **Title:** `_post_review_to_github` skips silently when header is absent; loop still retries forever
+- **Description:** `_post_review_to_github` only posts when `awk` extracts a non-empty block starting with `## 🔎 Code Review:`. If the review agent exits 0 but produces output without that header (e.g., API rate limit message, partial stream, unexpected preamble), `review_block` is empty, `gh issue comment` is never called, `verify_review_log_on_github` returns empty, `mark_final_review_status` is set to "failed", and the loop `continue`s — recreating the exact infinite-retry symptom the fix targeted.
+- **Evidence:** `.claude/scripts/implement-loop.sh:350-357` (skip on empty), `602-609` (verify → failed → continue)
+
+**F2 — autoEnqueueSeverities default diverges between copies**
+- **Severity:** high
+- **Confidence:** 0.85
+- **Category:** adherence
+- **Title:** `.claude` defaults to `["critical"]`; `.agents` defaults to `["critical","high"]` — behavioral divergence without config file
+- **Description:** The two copies are required to be identical mirrors (CLAUDE.md auto-pattern: "fixes should be applied identically to both"). Line 544 of each file shows different fallback values for `autoEnqueueSeverities` when `.issueloop.config.json` is absent. In that scenario `.agents` auto-enqueues both `critical` and `high` findings while `.claude` only auto-enqueues `critical`. This produces different loop behavior on fresh installs. Pre-existing, but surfaced by the mirroring requirement of this PR.
+- **Evidence:** `.claude/scripts/implement-loop.sh:544` (`["critical"]`), `.agents/skills/issues-loop/scripts/implement-loop.sh:544` (`["critical","high"]`)
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_final_bcb1bb7","scope":"final","parentTaskId":"FINAL","parentTaskUid":"final_review","reviewedCommit":"bcb1bb7","status":"completed","findings":[{"id":"F1","severity":"high","confidence":0.8,"category":"production_readiness","title":"_post_review_to_github skips silently when header absent; loop still retries forever","description":"If review agent exits 0 without the ## 🔎 Code Review: header, review_block is empty, gh comment is skipped, verify_review_log_on_github returns empty, loop marks failed and continues — same infinite retry as original bug.","evidence":{"file":".claude/scripts/implement-loop.sh","lines":"350-357,602-609"}},{"id":"F2","severity":"high","confidence":0.85,"category":"adherence","title":"autoEnqueueSeverities default diverges between .claude and .agents copies","description":"Line 544 differs: .claude defaults to [\"critical\"], .agents to [\"critical\",\"high\"]. Without config file the two copies enqueue findings differently, violating the identical-mirror requirement.","evidence":{"file":".claude/scripts/implement-loop.sh vs .agents/skills/issues-loop/scripts/implement-loop.sh","lines":"544"}}],"ts":"2026-02-20T23:59:00Z"}
+```
+
+<review_result>FINDINGS</review_result>
+--- End review output ---
+--- Review output for FINAL (6c6ab14) ---
+## 🔎 Code Review: FINAL
+
+### Summary
+
+The core fix correctly bridges the gap between local log capture and GitHub comment posting by adding `_post_review_to_github` and calling it in both async and sync paths of `spawn_task_review_agent`. Three material issues remain: behavioral divergence between `.claude` and `.agents` in review severity schema and auto-enqueue defaults; silent swallowing of `gh issue comment` failures that recreates the infinite-retry symptom under an undiagnosable root cause; and `output`/`exit_code` not declared `local` in the sync path.
+
+### Review Findings
+
+**F-01** — Severity schema and auto-enqueue defaults diverge between `.claude` and `.agents` copies
+- **Severity:** high | **Confidence:** 0.95 | **Category:** adherence
+- `.claude/scripts/implement-loop.sh` line 328–329 instructs the review agent to emit only `severity(critical|high)` with no `suggestedTask` guidance, and line 544 defaults `autoEnqueueSeverities` to `["critical"]`. `.agents/skills/issues-loop/scripts/implement-loop.sh` lines 328–329 uses `severity(critical|high|medium|low)` with `suggestedTask ONLY for critical/high findings`, and line 544 defaults to `["critical","high"]`. Projects installed from either source get meaningfully different review behavior—high-severity findings auto-enqueue only in `.agents`-installed projects and are silently suppressed in `.claude`-installed ones.
+- **Evidence:** `.claude/scripts/implement-loop.sh:328-329,544` vs `.agents/skills/issues-loop/scripts/implement-loop.sh:328-329,544`
+
+**F-02** — Silent `gh issue comment` failure in `_post_review_to_github` reproduces infinite-retry symptom
+- **Severity:** high | **Confidence:** 0.85 | **Category:** production_readiness
+- `_post_review_to_github` runs `gh issue comment "$ISSUE_NUMBER" --body "$review_block" 2>/dev/null || true`. On any `gh` failure (auth expiry, network error, rate limit), no diagnostic is emitted. The caller then immediately runs `verify_review_log_on_github`, finds no matching comment, marks `finalReview.status = "failed"`, and loops. Under persistent failure this reproduces the original infinite-retry symptom with a different, now-invisible root cause. A `log "$ICON_WARN _post_review_to_github: gh post failed"` in the else-branch (when `review_block` is non-empty but posting fails) would make this diagnosable.
+- **Evidence:** `.claude/scripts/implement-loop.sh:354-355`, `.agents/skills/issues-loop/scripts/implement-loop.sh:354-355`
+
+**F-03** — `output` and `exit_code` not declared `local` in sync path of `spawn_task_review_agent`
+- **Severity:** high | **Confidence:** 0.90 | **Category:** adherence
+- In the sync path, `output` and `exit_code` are assigned without `local` declarations (lines 401–402), leaking into the caller's scope after the function returns. The async path avoids this via subshell isolation. The existing `local changed_files issue_body issue_comments prompt` declaration on line 369 shows the intent to scope variables locally, making the omission inconsistent and a latent hazard for any future caller that uses variables named `output` or `exit_code`.
+- **Evidence:** `.claude/scripts/implement-loop.sh:401-402`, `.agents/skills/issues-loop/scripts/implement-loop.sh:401-402`
+
+### Review Event JSON
+```json
+{"v":1,"type":"review_log","issue":19,"reviewId":"rev_final_6c6ab14","scope":"final","parentTaskId":"FINAL","parentTaskUid":"final_review","reviewedCommit":"6c6ab14","status":"completed","findings":[{"id":"F-01","severity":"high","confidence":0.95,"category":"adherence","title":"Severity schema and auto-enqueue defaults diverge between .claude and .agents copies","description":"The .claude copy restricts review prompt to critical|high severity with no suggestedTask guidance and defaults autoEnqueueSeverities to [\"critical\"]; the .agents copy allows all four severity levels with suggestedTask for critical/high and defaults to [\"critical\",\"high\"]. Projects installed from different sources get meaningfully different review behavior.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"328-329,544"}},{"id":"F-02","severity":"high","confidence":0.85,"category":"production_readiness","title":"Silent gh failure in _post_review_to_github reproduces infinite-retry symptom","description":"gh issue comment runs with 2>/dev/null || true. On gh failure, nothing is logged; verify_review_log_on_github finds no comment, marks final review failed, and the loop retries indefinitely—same symptom as the original bug with an undiagnosable root cause.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"354-355"}},{"id":"F-03","severity":"high","confidence":0.90,"category":"adherence","title":"output and exit_code not declared local in sync path of spawn_task_review_agent","description":"In the sync path these variables are assigned without local, leaking into the caller's scope. The async path is safe via subshell isolation. Inconsistent with the existing local declaration for other variables in the same function.","evidence":{"file":".claude/scripts/implement-loop.sh","line":"401-402"}}],"ts":"2026-02-20T23:59:00Z"}
+```
+
+<review_result>FINDINGS</review_result>
+--- End review output ---
