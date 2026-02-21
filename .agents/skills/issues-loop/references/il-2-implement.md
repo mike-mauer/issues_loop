@@ -5,6 +5,7 @@ Executes the implementation loop following the Ralph pattern. **By default, laun
 
 The loop script (`scripts/implement-loop.sh`) provides:
 - Fresh context per task (calls the agent CLI for each)
+- Single issue snapshot fetch per iteration (`body` + `comments`) reused across context assembly and review ingestion
 - Automatic retries (up to 3 attempts per task)
 - Task logs posted to GitHub issue (with structured JSON event blocks)
 - Discovered-task auto-enqueue from task output
@@ -159,7 +160,7 @@ The loop will automatically:
 
 ### Compaction Summaries
 
-The loop tracks a compaction counter in `prd.json.compaction.taskLogCountSinceLastSummary`. After every N task logs (default 5, configured via `summaryEveryNTaskLogs`), a `## 🧾 Compacted Summary` comment is posted to the issue containing:
+The loop tracks a compaction counter in `prd.json.compaction.taskLogCountSinceLastSummary`. After every N task logs (default 10, configured via `summaryEveryNTaskLogs`), a `## 🧾 Compacted Summary` comment is posted to the issue containing:
 - Covered task UIDs and attempt counts
 - Canonical decisions and patterns from discovery notes
 - Open risks (tasks still failing)
@@ -173,6 +174,13 @@ After posting, the counter resets to 0. If the post fails, the counter is retain
 - Collects active (non-expired, non-promoted) wisps during context assembly
 - Includes their notes as supplementary context for the current task
 - Silently ignores expired or promoted wisps
+
+### Review Lane Throughput Defaults
+
+- Per-task and final review remain enabled (`review.mode = task_and_final`).
+- Review prompts use compact context by default (`review.context.useCompactBundle = true`).
+- Changed-file lists are capped (`review.context.maxChangedFiles`, default 80).
+- Review ingestion tracks `quality.reviewCursor.lastProcessedReviewCommentUrl` to avoid re-parsing old review comments.
 
 **Wisp promotion** (the only path to durability):
 - **To Discovery Note:** Converts the wisp into a `## 🔍 Discovery Note` comment
@@ -694,6 +702,7 @@ The script `scripts/implement-loop.sh` (with helpers from `scripts/implement-loo
 3. Loops through tasks, calling the agent CLI with fresh context for each
 4. Each agent invocation:
    - Reads prd.json for task details
+   - Fetches one issue snapshot (`body` + `comments`) and reuses it for context + review ingestion
    - Checks git log and issue comments for context
    - Collects active (non-expired) wisps for ephemeral context hints
    - Extracts recent JSON events from task log comments
@@ -704,7 +713,7 @@ The script `scripts/implement-loop.sh` (with helpers from `scripts/implement-loo
    - Posts task log to GitHub issue (with `### Event JSON` fenced block)
 5. After each task log post:
    - Auto-enqueues any discovered tasks from the task output into prd.json
-   - Increments the compaction counter; posts `## 🧾 Compacted Summary` every N task logs (default 5)
+   - Increments the compaction counter; posts `## 🧾 Compacted Summary` every N task logs (default 10)
 6. Exits when: all pass, blocked, or max iterations
 
 ### Log Output Example

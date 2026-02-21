@@ -521,7 +521,7 @@ counter=$(jq '.compaction.taskLogCountSinceLastSummary' "$TEST_DIR/prd-legacy.js
 assert_eq "$counter" "0" "5d: compaction counter initialized to 0"
 
 threshold=$(jq '.compaction.summaryEveryNTaskLogs' "$TEST_DIR/prd-legacy.json")
-assert_eq "$threshold" "5" "5d: compaction threshold initialized to 5"
+assert_eq "$threshold" "10" "5d: compaction threshold initialized to 10"
 
 # 5e. Per-story uid generated with tsk_ prefix
 uid1=$(jq -r '.userStories[0].uid' "$TEST_DIR/prd-legacy.json")
@@ -1314,12 +1314,111 @@ validated_replan=$(validate_generated_replan_tasks "$extracted_replan" 1)
 validated_replan_count=$(echo "$validated_replan" | jq -r 'length')
 assert_eq "$validated_replan_count" "1" "15j: validate_generated_replan_tasks keeps valid bounded tasks"
 
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 16: Snapshot Reuse + Review Cursor Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "── Test 16: Snapshot Reuse + Review Cursor Helpers ──"
+
+GH_CALL_LOG="$TEST_DIR/gh-call-log.txt"
+: > "$GH_CALL_LOG"
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    echo "issue view" >> "$GH_CALL_LOG"
+    local json_fields=""
+    local idx=1
+    while [ $idx -le $# ]; do
+      eval "arg=\${$idx}"
+      if [ "$arg" = "--json" ]; then
+        idx=$((idx + 1))
+        eval "json_fields=\${$idx}"
+        break
+      fi
+      idx=$((idx + 1))
+    done
+
+    if [ "$json_fields" = "body,comments" ]; then
+      cat << 'GHEOF'
+{"body":"Issue body for snapshot","comments":[
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-1001","author":{"login":"planner"},"createdAt":"2026-02-20T10:00:00Z","body":"## 📋 Implementation Plan\nPlan text"},
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-1002","author":{"login":"agent"},"createdAt":"2026-02-20T10:05:00Z","body":"## 📝 Task Log: US-010\n\n### Event JSON\n```json\n{\"v\":1,\"type\":\"task_log\",\"issue\":42,\"taskId\":\"US-010\",\"taskUid\":\"tsk_demo010\",\"status\":\"pass\",\"attempt\":1,\"commit\":\"abc111\",\"verify\":{\"passed\":[],\"failed\":[]},\"discovered\":[],\"ts\":\"2026-02-20T10:05:00Z\"}\n```"},
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-1003","author":{"login":"agent"},"createdAt":"2026-02-20T10:06:00Z","body":"## 🔎 Code Review: US-010\n\n### Summary\nLooks good.\n\n### Review Event JSON\n```json\n{\"v\":1,\"type\":\"review_log\",\"issue\":42,\"reviewId\":\"rev_task_010\",\"scope\":\"task\",\"parentTaskId\":\"US-010\",\"parentTaskUid\":\"tsk_demo010\",\"reviewedCommit\":\"abc111\",\"status\":\"completed\",\"findings\":[],\"ts\":\"2026-02-20T10:06:00Z\"}\n```"},
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-1004","author":{"login":"agent"},"createdAt":"2026-02-20T10:07:00Z","body":"## 🪶 Wisp\n\n```json\n{\"v\":1,\"type\":\"wisp\",\"id\":\"wsp_active16\",\"taskUid\":\"tsk_demo010\",\"note\":\"Active note\",\"expiresAt\":\"2099-01-01T00:00:00Z\",\"promoted\":false}\n```"}
+]}
+GHEOF
+      return 0
+    fi
+  fi
+  return 0
+}
+export -f gh
+
+fetch_issue_snapshot 42 > "$TEST_DIR/issue-snapshot.json"
+gh_call_count=$(wc -l < "$GH_CALL_LOG" | tr -d '[:space:]')
+assert_eq "$gh_call_count" "1" "16a: fetch_issue_snapshot uses one gh issue view call"
+snapshot_body=$(jq -r '.body' "$TEST_DIR/issue-snapshot.json")
+assert_eq "$snapshot_body" "Issue body for snapshot" "16a: fetch_issue_snapshot captures issue body"
+
+snapshot_comments=$(jq -c '.comments' "$TEST_DIR/issue-snapshot.json")
+build_issue_context_bundle 42 "true" 3 2 2 "$snapshot_comments" > "$TEST_DIR/bundle-prefetched.txt"
+bundle_prefetched=$(cat "$TEST_DIR/bundle-prefetched.txt")
+assert_contains "$bundle_prefetched" "Implementation Plan Snapshot" "16b: pre-fetched bundle includes plan section"
+
+collect_active_wisps 42 "$snapshot_comments" > "$TEST_DIR/wisps-prefetched.jsonl"
+wisps_prefetched=$(cat "$TEST_DIR/wisps-prefetched.jsonl")
+assert_contains "$wisps_prefetched" "wsp_active16" "16c: collect_active_wisps accepts pre-fetched comments"
+
+recent_comments_jsonl=$(echo "$snapshot_comments" | jq -r '.[] | @json')
+verified_task_prefetched=$(verify_task_log_on_github 42 "US-010" "tsk_demo010" "$recent_comments_jsonl")
+assert_contains "$verified_task_prefetched" '"taskId":"US-010"' "16d: verify_task_log_on_github accepts pre-fetched recent comments"
+
+verified_review_prefetched=$(verify_review_log_on_github 42 "US-010" "abc111" "$recent_comments_jsonl")
+assert_contains "$verified_review_prefetched" '"reviewId":"rev_task_010"' "16e: verify_review_log_on_github accepts pre-fetched recent comments"
+
+gh_call_count_after=$(wc -l < "$GH_CALL_LOG" | tr -d '[:space:]')
+assert_eq "$gh_call_count_after" "1" "16f: pre-fetched helper path avoids extra gh issue view calls"
+
+comments_full='[
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-2001","body":"one"},
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-2002","body":"two"},
+  {"url":"https://github.com/org/repo/issues/42#issuecomment-2003","body":"three"}
+]'
+slice_all=$(slice_comments_after_cursor "$comments_full" "")
+slice_all_count=$(echo "$slice_all" | jq -r 'length')
+assert_eq "$slice_all_count" "3" "16g: slice_comments_after_cursor returns all comments when cursor is empty"
+
+slice_after_second=$(slice_comments_after_cursor "$comments_full" "https://github.com/org/repo/issues/42#issuecomment-2002")
+slice_after_second_count=$(echo "$slice_after_second" | jq -r 'length')
+assert_eq "$slice_after_second_count" "1" "16h: slice_comments_after_cursor returns only newer comments"
+slice_after_second_url=$(echo "$slice_after_second" | jq -r '.[0].url')
+assert_contains "$slice_after_second_url" "issuecomment-2003" "16h: slice result starts after cursor"
+
+slice_none=$(slice_comments_after_cursor "$comments_full" "https://github.com/org/repo/issues/42#issuecomment-2003")
+slice_none_count=$(echo "$slice_none" | jq -r 'length')
+assert_eq "$slice_none_count" "0" "16i: slice_comments_after_cursor returns empty when cursor is newest"
+
+slice_missing=$(slice_comments_after_cursor "$comments_full" "https://github.com/org/repo/issues/42#issuecomment-missing")
+slice_missing_count=$(echo "$slice_missing" | jq -r 'length')
+assert_eq "$slice_missing_count" "3" "16j: slice_comments_after_cursor falls back to full list when cursor is missing"
+
+if grep -q "Issue memory bundle (compacted, high-signal)" "$PROJECT_DIR/.claude/scripts/implement-loop.sh"; then
+  pass "16k: review prompt uses compact context section"
+else
+  fail "16k: review prompt uses compact context section" "contains compact context section"
+fi
+if grep -q "REVIEW_CONTEXT_MAX_CHANGED_FILES" "$PROJECT_DIR/.claude/scripts/implement-loop.sh"; then
+  pass "16l: review changed file list is capped by config"
+else
+  fail "16l: review changed file list is capped by config" "contains REVIEW_CONTEXT_MAX_CHANGED_FILES"
+fi
+
+echo ""
+
 # Restore git/gh mocks
 git() { :; }
 gh() { :; }
 export -f git gh
-
-echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Results Summary

@@ -266,7 +266,7 @@ After plan approval, `prd.json` tracks testable task state:
   "formula": "feature",
   "compaction": {
     "taskLogCountSinceLastSummary": 0,
-    "summaryEveryNTaskLogs": 5
+    "summaryEveryNTaskLogs": 10
   },
   "memory": {
     "patterns": []
@@ -395,7 +395,7 @@ Key execution config (defaults):
     "taskSizing": {"enabled": true, "maxDescriptionSentences": 3, "maxAcceptanceCriteria": 10, "maxVerifyCommands": 6, "maxFiles": 12, "hardFailOnOversized": true},
     "contextManifest": {"enabled": true, "algorithm": "sha256", "enforceHashMatch": false},
     "eventEvidence": {"required": true},
-    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80, "fastGlobalVerifyCommands": [], "fullGlobalVerifyCommands": [], "fullRunEveryNPassedTasks": 3, "runFullVerifyBeforeTestingCheckpoint": false},
+    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80, "fastGlobalVerifyCommands": [], "fullGlobalVerifyCommands": [], "fullRunEveryNPassedTasks": 5, "runFullVerifyBeforeTestingCheckpoint": false},
     "searchEvidence": {"required": true, "minQueries": 2},
     "browserVerification": {"requiredForUiTasks": true, "hardFailWhenUnavailable": true, "allowedTools": ["playwright", "dev-browser"]},
     "placeholder": {"enabled": true, "semanticChecks": {"enabled": true, "blockTrivialConstantReturns": true, "blockAlwaysTrueFalseConditionals": true}},
@@ -403,6 +403,27 @@ Key execution config (defaults):
     "testIntent": {"requiredWhenTestsChanged": true, "enforce": false},
     "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 3, "consecutiveRetryThreshold": 6},
     "context": {"preferCompactedSummary": true, "maxTaskLogs": 8, "maxDiscoveryNotes": 6, "maxReviewLogs": 4}
+  }
+}
+```
+
+Review speed controls (defaults):
+
+```json
+{
+  "review": {
+    "mode": "task_and_final",
+    "context": {
+      "useCompactBundle": true,
+      "maxChangedFiles": 80,
+      "maxTaskLogs": 6,
+      "maxDiscoveryNotes": 4,
+      "maxReviewLogs": 3
+    },
+    "verification": {
+      "maxPollAttempts": 2,
+      "retrySleepSeconds": 1
+    }
   }
 }
 ```
@@ -421,7 +442,7 @@ When task Event JSON includes `patterns`, the loop:
 As task logs accumulate on an issue, the thread can grow long. **Compaction** automatically posts periodic summaries to keep context lean.
 
 ### Cadence
-- A `## 🧾 Compacted Summary` is posted every **5 task logs** (configurable via `summaryEveryNTaskLogs` in `.issueloop.config.json`)
+- A `## 🧾 Compacted Summary` is posted every **10 task logs** by default (configurable via `summaryEveryNTaskLogs` in `.issueloop.config.json`)
 - The counter is tracked in `prd.json.compaction.taskLogCountSinceLastSummary`
 - After posting, the counter resets to 0
 
@@ -458,10 +479,11 @@ The loop runs a parallel code-review lane designed to improve quality without sl
 
 ### Lifecycle
 1. A task passes and its task log is verified on GitHub.
-2. The loop spawns a **read-only** review agent for that task commit.
-3. Reviewer posts `## 🔎 Code Review: <scope>` with `### Review Event JSON`.
-4. Orchestrator ingests review events and deduplicates findings by `reviewId:findingId`.
-5. High-severity findings auto-enqueue follow-up tasks in `prd.json`.
+2. The loop reuses a single per-iteration issue snapshot (`body` + `comments`) and spawns a **read-only** review agent for that task commit.
+3. Review prompt context is compact by default (plan + compacted summary + capped recent logs), avoiding full comment transcript expansion.
+4. Reviewer posts `## 🔎 Code Review: <scope>` with `### Review Event JSON`.
+5. Orchestrator ingests only review events newer than `quality.reviewCursor.lastProcessedReviewCommentUrl`, then deduplicates findings by `reviewId:findingId`.
+6. High-severity findings auto-enqueue follow-up tasks in `prd.json`.
 
 ### Review Event Schema
 ```json
@@ -477,6 +499,10 @@ The loop runs a parallel code-review lane designed to improve quality without sl
 - When all implementation tasks pass, the loop runs a consolidated `FINAL` review over `main..HEAD`.
 - Testing checkpoint is blocked while open blocking findings remain.
 - If blocking findings exist, the loop labels issue `AI: Review` and continues with generated follow-up tasks.
+
+### Label Model Note
+- The current 8-label state machine remains unchanged in this release.
+- A future migration to `Planning/Doing/Done` is tracked as a separate design follow-up.
 
 ## 🧪 Testing Checkpoint
 

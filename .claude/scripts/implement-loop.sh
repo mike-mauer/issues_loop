@@ -43,10 +43,16 @@ MAX_ITERATIONS=${1:-20}
 ITERATION=0
 REVIEW_ENABLED="true"
 REVIEW_MAX_FINDINGS=5
+REVIEW_MODE="task_and_final"
+REVIEW_CONTEXT_USE_COMPACT_BUNDLE="true"
+REVIEW_CONTEXT_MAX_CHANGED_FILES=80
+REVIEW_CONTEXT_MAX_TASK_LOGS=6
+REVIEW_CONTEXT_MAX_DISCOVERY_NOTES=4
+REVIEW_CONTEXT_MAX_REVIEW_LOGS=3
 MAX_TASK_ATTEMPTS=3
 FINAL_REVIEW_MAX_ATTEMPTS=3
-FINAL_REVIEW_VERIFY_RETRIES=3
-FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS=3
+FINAL_REVIEW_VERIFY_RETRIES=2
+FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS=1
 FINAL_REVIEW_FAILURE_STREAK=0
 
 # Execution hardening defaults (overridden by load_execution_config)
@@ -267,9 +273,19 @@ build_review_prompt() {
   local task_json="$6"
   local changed_files="$7"
   local issue_body="$8"
-  local issue_comments="$9"
+  local compact_context="${9:-No compact context available.}"
+  local issue_comments="${10:-}"
+  local include_raw_comments="${11:-false}"
   local task_json_render="$task_json"
   [ -n "$task_json_render" ] || task_json_render='{}'
+
+  local raw_comments_section=""
+  if [ "$(echo "$include_raw_comments" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+    raw_comments_section="
+
+Issue comments (full transcript):
+${issue_comments}"
+  fi
 
   cat <<EOF
 You are a code-review agent. Read-only analysis only.
@@ -294,8 +310,8 @@ ${changed_files:-No changed files detected}
 Issue body:
 ${issue_body}
 
-Issue comments:
-${issue_comments}
+Issue memory bundle (compacted, high-signal):
+${compact_context}${raw_comments_section}
 
 Review dimensions in strict order:
 1) Correctness and regressions
@@ -396,16 +412,44 @@ spawn_task_review_agent() {
   local reviewed_commit="$5"
   local task_json="$6"
   local mode="${7:-async}"
+  local issue_body_prefetched="${8:-}"
+  local comments_json_prefetched="${9:-}"
+  local compact_context_prefetched="${10:-}"
 
-  local changed_files issue_body issue_comments prompt
+  local changed_files issue_body issue_comments compact_context include_raw_comments prompt
   if [ "$scope_type" = "final" ]; then
-    changed_files=$(git diff --name-only main..HEAD 2>/dev/null | head -200)
+    changed_files=$(git diff --name-only main..HEAD 2>/dev/null | head -"$REVIEW_CONTEXT_MAX_CHANGED_FILES")
   else
-    changed_files=$(git show --name-only --pretty="" "$reviewed_commit" 2>/dev/null | head -200)
+    changed_files=$(git show --name-only --pretty="" "$reviewed_commit" 2>/dev/null | head -"$REVIEW_CONTEXT_MAX_CHANGED_FILES")
   fi
-  issue_body=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body' 2>/dev/null || echo "Could not fetch issue body")
-  issue_comments=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[] | "---\n\(.author.login) (\(.createdAt)):\n\(.body)\n"' 2>/dev/null || echo "Could not fetch comments")
-  prompt=$(build_review_prompt "$scope_label" "$scope_type" "$parent_task_id" "$parent_task_uid" "$reviewed_commit" "$task_json" "$changed_files" "$issue_body" "$issue_comments")
+
+  issue_body="$issue_body_prefetched"
+  if [ -z "$issue_body" ]; then
+    issue_body=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body' 2>/dev/null || echo "Could not fetch issue body")
+  fi
+
+  compact_context="$compact_context_prefetched"
+  if [ -z "$compact_context" ]; then
+    compact_context=$(build_issue_context_bundle \
+      "$ISSUE_NUMBER" \
+      "true" \
+      "$REVIEW_CONTEXT_MAX_TASK_LOGS" \
+      "$REVIEW_CONTEXT_MAX_DISCOVERY_NOTES" \
+      "$REVIEW_CONTEXT_MAX_REVIEW_LOGS" \
+      "$comments_json_prefetched")
+  fi
+
+  include_raw_comments="false"
+  if [ "$(echo "$REVIEW_CONTEXT_USE_COMPACT_BUNDLE" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
+    include_raw_comments="true"
+    if [ -n "$comments_json_prefetched" ]; then
+      issue_comments=$(echo "$comments_json_prefetched" | jq -r '.[] | "---\n\(.author.login // "unknown") (\(.createdAt // "unknown")):\n\(.body // "")\n"' 2>/dev/null || echo "")
+    else
+      issue_comments=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[] | "---\n\(.author.login) (\(.createdAt)):\n\(.body)\n"' 2>/dev/null || echo "Could not fetch comments")
+    fi
+  fi
+
+  prompt=$(build_review_prompt "$scope_label" "$scope_type" "$parent_task_id" "$parent_task_uid" "$reviewed_commit" "$task_json" "$changed_files" "$issue_body" "$compact_context" "$issue_comments" "$include_raw_comments")
 
   mkdir -p "$(dirname "$REVIEW_LOG_FILE")"
 
@@ -452,20 +496,50 @@ spawn_task_review_agent() {
 
 # Ingest posted review events and auto-enqueue configured severities.
 process_review_lane() {
+  local comments_json="${1:-}"
   [ "$REVIEW_ENABLED" = "true" ] || return 0
 
-  local comments review_events
-  comments=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[] | .body' 2>/dev/null || echo "")
-  review_events=$(extract_review_events_from_issue_comments "$comments" 2>/dev/null || echo "")
+  if [ -z "$comments_json" ]; then
+    comments_json=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments' 2>/dev/null || echo "[]")
+  fi
 
+  local cursor_before cursor_changed
+  cursor_before=$(jq -r '.quality.reviewCursor.lastProcessedReviewCommentUrl // ""' "$PRD_FILE" 2>/dev/null || echo "")
+  cursor_changed=0
+
+  local comments_to_process
+  comments_to_process=$(slice_comments_after_cursor "$comments_json" "$cursor_before")
+
+  local newest_processed_url=""
   local ingested_total=0
-  if [ -n "$review_events" ]; then
+  while IFS= read -r raw_comment; do
+    [ -z "$raw_comment" ] && continue
+
+    local c_url c_body review_events
+    c_url=$(echo "$raw_comment" | jq -r '.url // ""' 2>/dev/null)
+    c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+    [ -n "$c_body" ] || continue
+
+    review_events=$(extract_review_events_from_issue_comments "$c_body" 2>/dev/null || echo "")
+    [ -n "$review_events" ] || continue
+
+    if [ -n "$c_url" ] && [ "$c_url" != "null" ]; then
+      newest_processed_url="$c_url"
+    fi
+
     while IFS= read -r event; do
       [ -z "$event" ] && continue
       local added_count
       added_count=$(ingest_review_findings_into_prd "$PRD_FILE" "$event" "$ISSUE_NUMBER" 2>/dev/null || echo "0")
       ingested_total=$((ingested_total + added_count))
     done <<< "$review_events"
+  done < <(echo "$comments_to_process" | jq -c '.[]' 2>/dev/null || true)
+
+  if [ -n "$newest_processed_url" ] && [ "$newest_processed_url" != "$cursor_before" ]; then
+    jq --arg cursor "$newest_processed_url" \
+      '.quality.reviewCursor.lastProcessedReviewCommentUrl = $cursor' \
+      "$PRD_FILE" > tmp.$$.json && mv tmp.$$.json "$PRD_FILE"
+    cursor_changed=1
   fi
 
   reconcile_review_findings "$PRD_FILE" 2>/dev/null || true
@@ -522,7 +596,7 @@ process_review_lane() {
     enqueued_count=$((enqueued_count + 1))
   done < <(echo "$enqueuable_json" | jq -c '.[]' 2>/dev/null)
 
-  if [ "$ingested_total" -gt 0 ] || [ "$enqueued_count" -gt 0 ]; then
+  if [ "$ingested_total" -gt 0 ] || [ "$enqueued_count" -gt 0 ] || [ "$cursor_changed" -eq 1 ]; then
     commit_prd_if_changed "chore: process review findings state (#$ISSUE_NUMBER)"
   fi
 }
@@ -549,7 +623,23 @@ if [ -f "$CONFIG_FILE" ]; then
     end
   ' "$CONFIG_FILE" 2>/dev/null || echo "true")
   REVIEW_MAX_FINDINGS=$(jq -r '.review.maxFindingsPerReview // 5' "$CONFIG_FILE" 2>/dev/null || echo "5")
+  REVIEW_MODE=$(jq -r '.review.mode // "task_and_final"' "$CONFIG_FILE" 2>/dev/null || echo "task_and_final")
+  REVIEW_CONTEXT_USE_COMPACT_BUNDLE=$(jq -r '.review.context.useCompactBundle // true' "$CONFIG_FILE" 2>/dev/null || echo "true")
+  REVIEW_CONTEXT_MAX_CHANGED_FILES=$(jq -r '.review.context.maxChangedFiles // 80' "$CONFIG_FILE" 2>/dev/null || echo "80")
+  REVIEW_CONTEXT_MAX_TASK_LOGS=$(jq -r '.review.context.maxTaskLogs // 6' "$CONFIG_FILE" 2>/dev/null || echo "6")
+  REVIEW_CONTEXT_MAX_DISCOVERY_NOTES=$(jq -r '.review.context.maxDiscoveryNotes // 4' "$CONFIG_FILE" 2>/dev/null || echo "4")
+  REVIEW_CONTEXT_MAX_REVIEW_LOGS=$(jq -r '.review.context.maxReviewLogs // 3' "$CONFIG_FILE" 2>/dev/null || echo "3")
+  FINAL_REVIEW_VERIFY_RETRIES=$(jq -r '.review.verification.maxPollAttempts // 2' "$CONFIG_FILE" 2>/dev/null || echo "2")
+  FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS=$(jq -r '.review.verification.retrySleepSeconds // 1' "$CONFIG_FILE" 2>/dev/null || echo "1")
 fi
+
+case "$REVIEW_MODE" in
+  task_and_final|final_only)
+    ;;
+  *)
+    REVIEW_MODE="task_and_final"
+    ;;
+esac
 
 MAX_TASK_ATTEMPTS="$EXEC_MAX_TASK_ATTEMPTS"
 
@@ -602,6 +692,7 @@ log "   Gate mode:  $EXEC_GATE_MODE"
 log "   Task size:  $EXEC_TASK_SIZING_ENABLED (hardFail=$EXEC_TASK_SIZING_HARD_FAIL_ON_OVERSIZED)"
 log "   Ctx hash:   $EXEC_CONTEXT_MANIFEST_ENABLED (enforce=$EXEC_CONTEXT_MANIFEST_ENFORCE_HASH_MATCH)"
 log "   Verify tier: fast+full (cadence=$EXEC_VERIFY_FULL_RUN_EVERY_N_PASSED_TASKS)"
+log "   Review mode: $REVIEW_MODE (compactCtx=$REVIEW_CONTEXT_USE_COMPACT_BUNDLE, maxFiles=$REVIEW_CONTEXT_MAX_CHANGED_FILES)"
 log "   Auto replan: $EXEC_REPLAN_AUTO_GENERATE_ON_STALE (singleApply=$EXEC_REPLAN_AUTO_APPLY_IF_SINGLE_TASK)"
 log ""
 log "$LINE_DOUBLE"
@@ -612,8 +703,12 @@ git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH"
 while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   ITERATION=$((ITERATION + 1))
 
+  ISSUE_SNAPSHOT=$(fetch_issue_snapshot "$ISSUE_NUMBER")
+  ITERATION_ISSUE_BODY=$(echo "$ISSUE_SNAPSHOT" | jq -r '.body // ""' 2>/dev/null || echo "")
+  ITERATION_COMMENTS_JSON=$(echo "$ISSUE_SNAPSHOT" | jq -c '.comments // []' 2>/dev/null || echo "[]")
+
   # Keep review lane converging with newly posted review events
-  process_review_lane
+  process_review_lane "$ITERATION_COMMENTS_JSON"
 
   # Check for remaining tasks
   REMAINING=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
@@ -628,7 +723,15 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         mark_final_review_status "$PRD_FILE" "running" "$HEAD_COMMIT" ""
         commit_prd_if_changed "chore: start final review gate (#$ISSUE_NUMBER)"
 
-        if ! spawn_task_review_agent "FINAL" "final" "FINAL" "final_review" "$HEAD_COMMIT" "{}" "sync"; then
+        FINAL_REVIEW_CONTEXT=$(build_issue_context_bundle \
+          "$ISSUE_NUMBER" \
+          "true" \
+          "$REVIEW_CONTEXT_MAX_TASK_LOGS" \
+          "$REVIEW_CONTEXT_MAX_DISCOVERY_NOTES" \
+          "$REVIEW_CONTEXT_MAX_REVIEW_LOGS" \
+          "$ITERATION_COMMENTS_JSON")
+
+        if ! spawn_task_review_agent "FINAL" "final" "FINAL" "final_review" "$HEAD_COMMIT" "{}" "sync" "$ITERATION_ISSUE_BODY" "$ITERATION_COMMENTS_JSON" "$FINAL_REVIEW_CONTEXT"; then
           log "$ICON_WARN Final review invocation failed."
           FINAL_REVIEW_FAILURE_STREAK=$((FINAL_REVIEW_FAILURE_STREAK + 1))
           mark_final_review_status "$PRD_FILE" "failed" "$HEAD_COMMIT" ""
@@ -659,7 +762,9 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         FINAL_EVENT=""
         FINAL_VERIFY_ATTEMPT=1
         while [ "$FINAL_VERIFY_ATTEMPT" -le "$FINAL_REVIEW_VERIFY_RETRIES" ]; do
-          FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" 2>/dev/null || echo "")
+          FINAL_SNAPSHOT=$(fetch_issue_snapshot "$ISSUE_NUMBER")
+          FINAL_RECENT_COMMENTS=$(echo "$FINAL_SNAPSHOT" | jq -r '.comments[-30:][]? | @json' 2>/dev/null || echo "")
+          FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" "$FINAL_RECENT_COMMENTS" 2>/dev/null || echo "")
           if [ -n "$FINAL_EVENT" ] && [ "$FINAL_EVENT" != "null" ]; then
             break
           fi
@@ -687,7 +792,9 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         FINAL_REVIEW_FAILURE_STREAK=0
         FINAL_REVIEW_ID=$(echo "$FINAL_EVENT" | jq -r '.reviewId // ""' 2>/dev/null)
         ingest_review_findings_into_prd "$PRD_FILE" "$FINAL_EVENT" "$ISSUE_NUMBER" >/dev/null 2>&1 || true
-        process_review_lane
+        FINAL_POST_SNAPSHOT=$(fetch_issue_snapshot "$ISSUE_NUMBER")
+        FINAL_POST_COMMENTS_JSON=$(echo "$FINAL_POST_SNAPSHOT" | jq -c '.comments // []' 2>/dev/null || echo "[]")
+        process_review_lane "$FINAL_POST_COMMENTS_JSON"
 
         REMAINING_AFTER_REVIEW=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
         BLOCKING_REVIEW_FINDINGS=$(count_open_blocking_review_findings "$PRD_FILE")
@@ -843,15 +950,21 @@ This task requires browser verification.
   # 2. Get recent git commits (last 10)
   GIT_LOG=$(git log --oneline -10 2>/dev/null || echo "No git history available")
 
-  # 3. Get issue body and compact memory bundle (comments are the memory system)
-  ISSUE_BODY=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body' 2>/dev/null || echo "Could not fetch issue body")
-  ISSUE_MEMORY_BUNDLE=$(build_issue_context_bundle "$ISSUE_NUMBER" "$EXEC_CONTEXT_PREFER_COMPACTED" "$EXEC_CONTEXT_MAX_TASK_LOGS" "$EXEC_CONTEXT_MAX_DISCOVERY_NOTES" "$EXEC_CONTEXT_MAX_REVIEW_LOGS")
+  # 3. Use iteration snapshot for issue body + compact memory bundle
+  ISSUE_BODY="$ITERATION_ISSUE_BODY"
+  ISSUE_MEMORY_BUNDLE=$(build_issue_context_bundle \
+    "$ISSUE_NUMBER" \
+    "$EXEC_CONTEXT_PREFER_COMPACTED" \
+    "$EXEC_CONTEXT_MAX_TASK_LOGS" \
+    "$EXEC_CONTEXT_MAX_DISCOVERY_NOTES" \
+    "$EXEC_CONTEXT_MAX_REVIEW_LOGS" \
+    "$ITERATION_COMMENTS_JSON")
 
   # 4. Get list of files in repo (for context on codebase structure)
   REPO_STRUCTURE=$(find . -type f -name "*.ts" -o -name "*.js" -o -name "*.tsx" -o -name "*.jsx" -o -name "*.py" -o -name "*.go" -o -name "*.rs" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -50 || echo "Could not list files")
 
   # 5. Collect active (non-expired) wisps for ephemeral context
-  ACTIVE_WISPS=$(collect_active_wisps "$ISSUE_NUMBER" 2>/dev/null || echo "")
+  ACTIVE_WISPS=$(collect_active_wisps "$ISSUE_NUMBER" "$ITERATION_COMMENTS_JSON" 2>/dev/null || echo "")
 
   CONTEXT_MANIFEST_JSON="{}"
   CONTEXT_MANIFEST_HASH=""
@@ -974,7 +1087,9 @@ Output guidance:
   fi
 
   # ─── Post-task orchestration: verify task log, run gates, and update state ───
-  PARSED_EVENT=$(verify_task_log_on_github "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" 2>/dev/null || echo "")
+  POST_TASK_SNAPSHOT=$(fetch_issue_snapshot "$ISSUE_NUMBER")
+  POST_TASK_RECENT_COMMENTS=$(echo "$POST_TASK_SNAPSHOT" | jq -r '.comments[-5:][]? | @json' 2>/dev/null || echo "")
+  PARSED_EVENT=$(verify_task_log_on_github "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$POST_TASK_RECENT_COMMENTS" 2>/dev/null || echo "")
   EVENT_VERIFIED=0
   PATTERN_SYNC_DOCS='[]'
   PATTERN_SYNC_CHANGED="false"
@@ -1215,12 +1330,21 @@ Output guidance:
 
     if [ "$EVENT_VERIFIED" -eq 1 ]; then
       maybe_post_compaction_summary "$PRD_FILE" "$ISSUE_NUMBER" "$NEXT_TASK" "$TASK_UID" "$ATTEMPT_NUMBER"
-      if [ "$REVIEW_ENABLED" = "true" ]; then
+      if [ "$REVIEW_ENABLED" = "true" ] && [ "$REVIEW_MODE" != "final_only" ]; then
         REVIEW_COMMIT=$(echo "$PARSED_EVENT" | jq -r '.commit // ""' 2>/dev/null)
         if [ -z "$REVIEW_COMMIT" ] || [ "$REVIEW_COMMIT" = "null" ]; then
           REVIEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
         fi
-        spawn_task_review_agent "$NEXT_TASK" "task" "$NEXT_TASK" "$TASK_UID" "$REVIEW_COMMIT" "$TASK_JSON" "async"
+        TASK_REVIEW_ISSUE_BODY=$(echo "$POST_TASK_SNAPSHOT" | jq -r '.body // ""' 2>/dev/null || echo "")
+        TASK_REVIEW_COMMENTS_JSON=$(echo "$POST_TASK_SNAPSHOT" | jq -c '.comments // []' 2>/dev/null || echo "[]")
+        TASK_REVIEW_CONTEXT=$(build_issue_context_bundle \
+          "$ISSUE_NUMBER" \
+          "true" \
+          "$REVIEW_CONTEXT_MAX_TASK_LOGS" \
+          "$REVIEW_CONTEXT_MAX_DISCOVERY_NOTES" \
+          "$REVIEW_CONTEXT_MAX_REVIEW_LOGS" \
+          "$TASK_REVIEW_COMMENTS_JSON")
+        spawn_task_review_agent "$NEXT_TASK" "task" "$NEXT_TASK" "$TASK_UID" "$REVIEW_COMMIT" "$TASK_JSON" "async" "$TASK_REVIEW_ISSUE_BODY" "$TASK_REVIEW_COMMENTS_JSON" "$TASK_REVIEW_CONTEXT"
       fi
     fi
 
