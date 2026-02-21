@@ -31,3 +31,7 @@ This project uses GitHub Issues for AI-assisted development. When working on iss
 7. **Commit per task**: `task(X.Y): description (#issue)`
 
 See `.claude/rules/github-issue-workflow.md` for complete workflow documentation.
+
+<!-- issues-loop:auto-patterns:start -->
+- [.claude/scripts/implement-loop.sh] Subshells inherit parent shell vars; no export needed for ISSUE_NUMBER (source: #19 US-001)
+<!-- issues-loop:auto-patterns:end -->

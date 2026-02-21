@@ -344,6 +344,18 @@ Final line exactly one of:
 EOF
 }
 
+# Extract the ## 🔎 Code Review: block from review agent output and post it as a
+# GitHub issue comment so verify_review_log_on_github can find it.
+# Args: $1 - full captured output from the review agent
+_post_review_to_github() {
+  local output="$1"
+  local review_block
+  review_block=$(printf '%s\n' "$output" | awk '/^## 🔎 Code Review:/{found=1} found{print}')
+  if [ -n "$review_block" ]; then
+    gh issue comment "$ISSUE_NUMBER" --body "$review_block" 2>/dev/null || true
+  fi
+}
+
 # Run a review agent invocation. mode: async|sync
 spawn_task_review_agent() {
   local scope_label="$1"
@@ -379,6 +391,7 @@ spawn_task_review_agent() {
           echo "Review invocation exited with non-zero status: $exit_code"
         fi
       } >> "$REVIEW_LOG_FILE"
+      _post_review_to_github "$output"
     ) &
     log "$ICON_INFO Review agent spawned for $scope_label"
     return 0
@@ -393,6 +406,7 @@ spawn_task_review_agent() {
     echo "$output" | tail -120
     echo "--- End review output ---"
   } >> "$REVIEW_LOG_FILE"
+  _post_review_to_github "$output"
   if [ $exit_code -ne 0 ] && [ -z "$output" ]; then
     return 1
   fi
@@ -583,6 +597,22 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
           commit_prd_if_changed "chore: final review invocation failed (#$ISSUE_NUMBER)"
           gh issue edit "$ISSUE_NUMBER" --add-label "AI: Review" 2>/dev/null || true
           continue
+        fi
+
+        # Inline GitHub posting: read the review output from the log file and post
+        # it as a GitHub comment. spawn_task_review_agent calls _post_review_to_github
+        # internally, but if the loop was started before that helper was defined (i.e.,
+        # the running bash process has an older in-memory function table), the internal
+        # call is a no-op. This inline fallback runs in the while-loop body, which bash
+        # re-reads from disk each iteration, so it always reflects the current code.
+        _fl_review_output=$(awk -v sentinel="--- Review output for FINAL ($HEAD_COMMIT) ---" '
+          $0 == sentinel { start=1; next }
+          /--- End review output ---/ { if (start) exit }
+          start { print }
+        ' "$REVIEW_LOG_FILE" 2>/dev/null || echo "")
+        _fl_review_block=$(printf '%s\n' "$_fl_review_output" | awk '/^## 🔎 Code Review:/{found=1} found{print}')
+        if [ -n "$_fl_review_block" ]; then
+          gh issue comment "$ISSUE_NUMBER" --body "$_fl_review_block" 2>/dev/null || true
         fi
 
         FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" 2>/dev/null || echo "")
