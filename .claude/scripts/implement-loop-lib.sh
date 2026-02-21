@@ -147,7 +147,7 @@ initialize_missing_prd_fields() {
   if jq -e '.compaction' "$tmp_file" >/dev/null 2>&1; then
     : # compaction exists
   else
-    jq '.compaction = {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 5}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    jq '.compaction = {"taskLogCountSinceLastSummary": 0, "summaryEveryNTaskLogs": 10}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
 
@@ -174,6 +174,9 @@ initialize_missing_prd_fields() {
         "approvalRequiredSeverities": ["critical"],
         "minConfidenceForAutoEnqueue": 0.75,
         "maxFindingsPerReview": 5
+      },
+      "reviewCursor": {
+        "lastProcessedReviewCommentUrl": null
       },
       "findings": [],
       "processedReviewKeys": [],
@@ -215,6 +218,14 @@ initialize_missing_prd_fields() {
   fi
   if jq -e '.quality.reviewPolicy.maxFindingsPerReview' "$tmp_file" >/dev/null 2>&1; then :; else
     jq '.quality.reviewPolicy.maxFindingsPerReview = 5' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewCursor' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewCursor = {"lastProcessedReviewCommentUrl": null}' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+    needs_update=1
+  fi
+  if jq -e '.quality.reviewCursor.lastProcessedReviewCommentUrl' "$tmp_file" >/dev/null 2>&1; then :; else
+    jq '.quality.reviewCursor.lastProcessedReviewCommentUrl = null' "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
     needs_update=1
   fi
   if jq -e '.quality.findings' "$tmp_file" >/dev/null 2>&1; then :; else
@@ -1829,6 +1840,28 @@ PY
   rm -f "$diff_file"
 }
 
+# Fetch issue body + comments in one GitHub API call.
+#
+# Args:
+#   $1 - issue number
+#
+# Output: JSON object {"body":"...","comments":[...]}
+fetch_issue_snapshot() {
+  local issue_number="$1"
+  local snapshot
+  snapshot=$(gh issue view "$issue_number" --json body,comments 2>/dev/null || echo "")
+
+  if [ -z "$snapshot" ]; then
+    echo '{"body":"","comments":[]}'
+    return 0
+  fi
+
+  echo "$snapshot" | jq -c '{
+    body: (.body // ""),
+    comments: (.comments // [])
+  }' 2>/dev/null || echo '{"body":"","comments":[]}'
+}
+
 # Build a compact memory bundle from issue comments to keep context lean.
 #
 # Args:
@@ -1837,6 +1870,7 @@ PY
 #   $3 - max task logs
 #   $4 - max discovery notes
 #   $5 - max review logs
+#   $6 - optional pre-fetched comments JSON array
 #
 # Output: markdown string
 build_issue_context_bundle() {
@@ -1845,9 +1879,11 @@ build_issue_context_bundle() {
   local max_task_logs="${3:-8}"
   local max_discovery_notes="${4:-6}"
   local max_review_logs="${5:-4}"
+  local comments_json="${6:-}"
 
-  local comments_json
-  comments_json=$(gh issue view "$issue_number" --json comments --jq '.comments' 2>/dev/null || echo "[]")
+  if [ -z "$comments_json" ]; then
+    comments_json=$(gh issue view "$issue_number" --json comments --jq '.comments' 2>/dev/null || echo "[]")
+  fi
 
   local plan_body compacted_summary task_logs discovery_notes review_logs
   plan_body=$(echo "$comments_json" | jq -r '[.[] | select(.body | startswith("## 📋 Implementation Plan"))][-1].body // ""')
@@ -2216,12 +2252,46 @@ extract_review_events_from_issue_comments() {
   done <<< "$comments"
 }
 
+# Slice comments array to entries newer than a cursor URL.
+#
+# Args:
+#   $1 - comments JSON array
+#   $2 - cursor URL (empty means no cursor)
+#
+# Output: comments JSON array (from cursor+1 to end, or full array if cursor missing)
+slice_comments_after_cursor() {
+  local comments_json="$1"
+  local cursor_url="$2"
+
+  if [ -z "$comments_json" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  echo "$comments_json" | jq -c --arg cursor "$cursor_url" '
+    . as $comments |
+    (
+      if $cursor == "" then
+        null
+      else
+        ([range(0; ($comments | length)) | select($comments[.].url == $cursor)] | last)
+      end
+    ) as $cursor_idx |
+    if $cursor_idx == null then
+      $comments
+    else
+      $comments[($cursor_idx + 1):]
+    end
+  ' 2>/dev/null || echo "[]"
+}
+
 # Verify that a review log with Review Event JSON was posted to GitHub.
 #
 # Args:
 #   $1 - issue number
 #   $2 - review scope label (e.g., US-003 or FINAL)
 #   $3 - reviewed commit hash (optional; if provided must match)
+#   $4 - optional pre-fetched recent comments (jsonl via @json rows)
 #
 # Output: verified review event JSON object, or empty
 # Returns: 0 if verified, 1 otherwise
@@ -2229,12 +2299,14 @@ verify_review_log_on_github() {
   local issue_number="$1"
   local scope_label="$2"
   local reviewed_commit="$3"
+  local recent_comments="${4:-}"
   local scope_label_lc
   scope_label_lc=$(printf '%s' "$scope_label" | tr '[:upper:]' '[:lower:]')
 
-  local recent_comments
-  recent_comments=$(gh issue view "$issue_number" --json comments \
-    --jq '.comments[-30:][] | @json' 2>/dev/null || echo "")
+  if [ -z "$recent_comments" ]; then
+    recent_comments=$(gh issue view "$issue_number" --json comments \
+      --jq '.comments[-30:][] | @json' 2>/dev/null || echo "")
+  fi
 
   if [ -z "$recent_comments" ]; then
     return 1
@@ -2491,11 +2563,11 @@ mark_final_review_status() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Increment the compaction counter and post a compacted summary when the
-# threshold is reached (default: every 5 task logs).
+# threshold is reached (default: every 10 task logs).
 #
 # Call this after every successful task log post. It:
 #   1. Increments prd.json.compaction.taskLogCountSinceLastSummary
-#   2. If count >= summaryEveryNTaskLogs (default 5):
+#   2. If count >= summaryEveryNTaskLogs (default 10):
 #      a. Collects covered task UIDs and attempt numbers from recent task logs
 #      b. Finds previous compaction summary comment URL (supersedes pointer, or 'none')
 #      c. Posts '## 🧾 Compacted Summary' to the GitHub issue
@@ -2529,7 +2601,7 @@ maybe_post_compaction_summary() {
   current_count=$(jq '.compaction.taskLogCountSinceLastSummary // 0' "$prd_file")
 
   local threshold
-  threshold=$(jq '.compaction.summaryEveryNTaskLogs // 5' "$prd_file")
+  threshold=$(jq '.compaction.summaryEveryNTaskLogs // 10' "$prd_file")
 
   # Check if we've hit the threshold
   if [ "$current_count" -lt "$threshold" ]; then
@@ -2635,17 +2707,23 @@ $(jq -r '
 #
 # Args:
 #   $1 - issue number
+#   $2 - optional pre-fetched comments JSON array
 #
 # Output: one wisp JSON object per line (only active/non-expired wisps)
 collect_active_wisps() {
   local issue_number="$1"
+  local comments_json="${2:-}"
   local now_epoch
   now_epoch=$(date +%s)
 
   # Fetch all wisp comments from the issue
   local wisp_bodies
-  wisp_bodies=$(gh issue view "$issue_number" --json comments \
-    --jq '.comments[] | select(.body | startswith("## 🪶 Wisp")) | .body' 2>/dev/null || echo "")
+  if [ -n "$comments_json" ]; then
+    wisp_bodies=$(echo "$comments_json" | jq -r '.[] | select(.body | startswith("## 🪶 Wisp")) | .body' 2>/dev/null || echo "")
+  else
+    wisp_bodies=$(gh issue view "$issue_number" --json comments \
+      --jq '.comments[] | select(.body | startswith("## 🪶 Wisp")) | .body' 2>/dev/null || echo "")
+  fi
 
   if [ -z "$wisp_bodies" ]; then
     return 0
@@ -2842,6 +2920,7 @@ ${updated_wisp}
 #   $1 - issue number
 #   $2 - task id (e.g., "US-003")
 #   $3 - expected task uid (e.g., "tsk_a1b2c3d4e5f6")
+#   $4 - optional pre-fetched recent comments (jsonl via @json rows)
 #
 # Output: the verified/patched Event JSON object (single line), or empty
 # Returns: 0 if verified, 1 if no matching task log found on GitHub
@@ -2849,11 +2928,13 @@ verify_task_log_on_github() {
   local issue_number="$1"
   local task_id="$2"
   local expected_uid="$3"
+  local recent_comments="${4:-}"
 
   # Fetch recent comments (last 5 to cover retries)
-  local recent_comments
-  recent_comments=$(gh issue view "$issue_number" --json comments \
-    --jq '.comments[-5:][] | @json' 2>/dev/null || echo "")
+  if [ -z "$recent_comments" ]; then
+    recent_comments=$(gh issue view "$issue_number" --json comments \
+      --jq '.comments[-5:][] | @json' 2>/dev/null || echo "")
+  fi
 
   if [ -z "$recent_comments" ]; then
     return 1

@@ -134,7 +134,14 @@ Later? → Pause, resume with /implement
 - UI tasks require browser verification event evidence.
 - Two-tier verify:
   - Fast tier: task `verifyCommands` + `execution.verify.fastGlobalVerifyCommands`.
-  - Full tier: `execution.verify.fullGlobalVerifyCommands` on cadence (+ optional testing-checkpoint gate when enabled).
+  - Full tier: `execution.verify.fullGlobalVerifyCommands` on cadence (`fullRunEveryNPassedTasks`, default 5) (+ optional testing-checkpoint gate when enabled).
+- Compacted summaries post every `summaryEveryNTaskLogs` task logs (default 10).
+- Review lane defaults:
+  - `review.mode = task_and_final`
+  - Compact review context enabled (`review.context.useCompactBundle = true`)
+  - Changed files capped (`review.context.maxChangedFiles = 80`)
+  - Cursor-based ingestion (`quality.reviewCursor.lastProcessedReviewCommentUrl`)
+  - Final review poll retries default to 2 with 1-second backoff
 - `execution.gateMode`:
   - `enforce` (default): violations fail the task.
   - `warn`: log violations, continue if verify passes.

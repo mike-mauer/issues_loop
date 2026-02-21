@@ -35,10 +35,22 @@
     "replanCheckpoint": "## 🔁 Replan Checkpoint"
   },
   "taskLogJsonVersion": 1,
-  "summaryEveryNTaskLogs": 5,
+  "summaryEveryNTaskLogs": 10,
   "wispDefaultTtlMinutes": 90,
   "review": {
     "enabled": true,
+    "mode": "task_and_final",
+    "context": {
+      "useCompactBundle": true,
+      "maxChangedFiles": 80,
+      "maxTaskLogs": 6,
+      "maxDiscoveryNotes": 4,
+      "maxReviewLogs": 3
+    },
+    "verification": {
+      "maxPollAttempts": 2,
+      "retrySleepSeconds": 1
+    },
     "autoEnqueueSeverities": [
       "critical"
     ],
@@ -77,7 +89,7 @@
       "maxOutputLinesPerCommand": 80,
       "fastGlobalVerifyCommands": [],
       "fullGlobalVerifyCommands": [],
-      "fullRunEveryNPassedTasks": 3,
+      "fullRunEveryNPassedTasks": 5,
       "runFullVerifyBeforeTestingCheckpoint": false,
       "globalVerifyCommands": [],
       "securityVerifyCommands": [],
