@@ -217,6 +217,17 @@ review_result=$(extract_review_events_from_issue_comments "$COMMENTS_REVIEW")
 assert_contains "$review_result" '"type":"review_log"' "1f: Extracts review_log event from Review Event JSON block"
 assert_contains "$review_result" '"reviewId":"rev_test_001"' "1f: reviewId extracted correctly"
 
+# 1g. Review Event heading/code fence variants are accepted
+COMMENTS_REVIEW_VARIANT='## 🔎 Code Review: FINAL
+
+### review event json
+```
+{"v":1,"type":"review_log","issue":42,"reviewId":"rev_test_002","scope":"final","parentTaskId":"FINAL","parentTaskUid":"final_review","reviewedCommit":"abc1234","status":"completed","findings":[],"ts":"2026-02-16T18:31:00Z"}
+```'
+
+review_variant_result=$(extract_review_events_from_issue_comments "$COMMENTS_REVIEW_VARIANT")
+assert_contains "$review_variant_result" '"reviewId":"rev_test_002"' "1g: Extracts review event with case-insensitive heading and plain fence"
+
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -806,6 +817,19 @@ export -f gh
 verified_final=$(verify_review_log_on_github 101 "FINAL" "abc999")
 assert_contains "$verified_final" '"reviewId":"rev_final_001"' "8b: verify_review_log_on_github finds matching FINAL review"
 assert_contains "$verified_final" '"reviewedCommit":"abc999"' "8b: verify_review_log_on_github validates reviewedCommit"
+
+gh() {
+  if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    cat << 'GHEOF'
+{"url":"https://github.com/org/repo/issues/101#issuecomment-9992","body":"## 🔎 Code Review: Final\n\n### review event json\n```\n{\"v\":1,\"type\":\"review_log\",\"issue\":101,\"reviewId\":\"rev_final_002\",\"scope\":\"final\",\"parentTaskId\":\"FINAL\",\"parentTaskUid\":\"final_review\",\"reviewedCommit\":\"abc999\",\"status\":\"completed\",\"findings\":[],\"ts\":\"2026-02-16T12:46:00Z\"}\n```"}
+GHEOF
+    return 0
+  fi
+}
+export -f gh
+
+verified_final_variant=$(verify_review_log_on_github 101 "FINAL" "abc999")
+assert_contains "$verified_final_variant" '"reviewId":"rev_final_002"' "8c: verify_review_log_on_github matches by event fields, not heading case"
 
 # Reset gh mock to no-op
 gh() { :; }

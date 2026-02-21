@@ -44,6 +44,10 @@ ITERATION=0
 REVIEW_ENABLED="true"
 REVIEW_MAX_FINDINGS=5
 MAX_TASK_ATTEMPTS=3
+FINAL_REVIEW_MAX_ATTEMPTS=3
+FINAL_REVIEW_VERIFY_RETRIES=3
+FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS=3
+FINAL_REVIEW_FAILURE_STREAK=0
 
 # Execution hardening defaults (overridden by load_execution_config)
 EXEC_GATE_MODE="enforce"
@@ -346,14 +350,41 @@ EOF
 
 # Extract the ## 🔎 Code Review: block from review agent output and post it as a
 # GitHub issue comment so verify_review_log_on_github can find it.
-# Args: $1 - full captured output from the review agent
+# Args:
+#   $1 - full captured output from the review agent
+#   $2 - scope label (optional, for fallback synthetic comment)
 _post_review_to_github() {
   local output="$1"
-  local review_block
+  local scope_label="${2:-REVIEW}"
+  local review_block review_event
   review_block=$(printf '%s\n' "$output" | awk '/^## 🔎 Code Review:/{found=1} found{print}')
-  if [ -n "$review_block" ]; then
-    gh issue comment "$ISSUE_NUMBER" --body "$review_block" 2>/dev/null || true
+  if [ -z "$review_block" ]; then
+    review_event=$(extract_review_events_from_issue_comments "$output" 2>/dev/null | head -1)
+    if [ -n "$review_event" ]; then
+      review_block=$(cat <<EOF
+## 🔎 Code Review: ${scope_label}
+
+### Review Event JSON
+\`\`\`json
+${review_event}
+\`\`\`
+EOF
+)
+    fi
   fi
+
+  if [ -z "$review_block" ]; then
+    return 1
+  fi
+
+  if gh issue comment "$ISSUE_NUMBER" --body "$review_block" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  {
+    echo "Failed to post review comment for $scope_label to GitHub issue #$ISSUE_NUMBER."
+  } >> "$REVIEW_LOG_FILE"
+  return 1
 }
 
 # Run a review agent invocation. mode: async|sync
@@ -381,6 +412,7 @@ spawn_task_review_agent() {
   if [ "$mode" = "async" ]; then
     (
       set +e
+      local output exit_code
       output=$(echo "$prompt" | claude --print --dangerously-skip-permissions 2>&1)
       exit_code=$?
       {
@@ -391,12 +423,15 @@ spawn_task_review_agent() {
           echo "Review invocation exited with non-zero status: $exit_code"
         fi
       } >> "$REVIEW_LOG_FILE"
-      _post_review_to_github "$output"
+      if ! _post_review_to_github "$output" "$scope_label"; then
+        echo "Review output missing postable review block for $scope_label." >> "$REVIEW_LOG_FILE"
+      fi
     ) &
     log "$ICON_INFO Review agent spawned for $scope_label"
     return 0
   fi
 
+  local output exit_code
   set +e
   output=$(echo "$prompt" | claude --print --dangerously-skip-permissions 2>&1)
   exit_code=$?
@@ -406,7 +441,9 @@ spawn_task_review_agent() {
     echo "$output" | tail -120
     echo "--- End review output ---"
   } >> "$REVIEW_LOG_FILE"
-  _post_review_to_github "$output"
+  if ! _post_review_to_github "$output" "$scope_label"; then
+    return 1
+  fi
   if [ $exit_code -ne 0 ] && [ -z "$output" ]; then
     return 1
   fi
@@ -593,9 +630,16 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
         if ! spawn_task_review_agent "FINAL" "final" "FINAL" "final_review" "$HEAD_COMMIT" "{}" "sync"; then
           log "$ICON_WARN Final review invocation failed."
+          FINAL_REVIEW_FAILURE_STREAK=$((FINAL_REVIEW_FAILURE_STREAK + 1))
           mark_final_review_status "$PRD_FILE" "failed" "$HEAD_COMMIT" ""
           commit_prd_if_changed "chore: final review invocation failed (#$ISSUE_NUMBER)"
           gh issue edit "$ISSUE_NUMBER" --add-label "AI: Review" 2>/dev/null || true
+          if [ "$FINAL_REVIEW_FAILURE_STREAK" -ge "$FINAL_REVIEW_MAX_ATTEMPTS" ]; then
+            log "$ICON_BLOCKED Final review gate failed $FINAL_REVIEW_FAILURE_STREAK time(s); stopping loop."
+            gh issue edit "$ISSUE_NUMBER" --add-label "AI: Blocked" 2>/dev/null || true
+            git push 2>/dev/null || true
+            exit 1
+          fi
           continue
         fi
 
@@ -610,20 +654,37 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
           /--- End review output ---/ { if (start) exit }
           start { print }
         ' "$REVIEW_LOG_FILE" 2>/dev/null || echo "")
-        _fl_review_block=$(printf '%s\n' "$_fl_review_output" | awk '/^## 🔎 Code Review:/{found=1} found{print}')
-        if [ -n "$_fl_review_block" ]; then
-          gh issue comment "$ISSUE_NUMBER" --body "$_fl_review_block" 2>/dev/null || true
-        fi
+        _post_review_to_github "$_fl_review_output" "FINAL" >/dev/null 2>&1 || true
 
-        FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" 2>/dev/null || echo "")
+        FINAL_EVENT=""
+        FINAL_VERIFY_ATTEMPT=1
+        while [ "$FINAL_VERIFY_ATTEMPT" -le "$FINAL_REVIEW_VERIFY_RETRIES" ]; do
+          FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" 2>/dev/null || echo "")
+          if [ -n "$FINAL_EVENT" ] && [ "$FINAL_EVENT" != "null" ]; then
+            break
+          fi
+          if [ "$FINAL_VERIFY_ATTEMPT" -lt "$FINAL_REVIEW_VERIFY_RETRIES" ]; then
+            sleep "$FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS"
+          fi
+          FINAL_VERIFY_ATTEMPT=$((FINAL_VERIFY_ATTEMPT + 1))
+        done
+
         if [ -z "$FINAL_EVENT" ] || [ "$FINAL_EVENT" = "null" ]; then
           log "$ICON_WARN Final review event not verified on GitHub."
+          FINAL_REVIEW_FAILURE_STREAK=$((FINAL_REVIEW_FAILURE_STREAK + 1))
           mark_final_review_status "$PRD_FILE" "failed" "$HEAD_COMMIT" ""
           commit_prd_if_changed "chore: final review event missing (#$ISSUE_NUMBER)"
           gh issue edit "$ISSUE_NUMBER" --add-label "AI: Review" 2>/dev/null || true
+          if [ "$FINAL_REVIEW_FAILURE_STREAK" -ge "$FINAL_REVIEW_MAX_ATTEMPTS" ]; then
+            log "$ICON_BLOCKED Final review event missing $FINAL_REVIEW_FAILURE_STREAK time(s); stopping loop."
+            gh issue edit "$ISSUE_NUMBER" --add-label "AI: Blocked" 2>/dev/null || true
+            git push 2>/dev/null || true
+            exit 1
+          fi
           continue
         fi
 
+        FINAL_REVIEW_FAILURE_STREAK=0
         FINAL_REVIEW_ID=$(echo "$FINAL_EVENT" | jq -r '.reviewId // ""' 2>/dev/null)
         ingest_review_findings_into_prd "$PRD_FILE" "$FINAL_EVENT" "$ISSUE_NUMBER" >/dev/null 2>&1 || true
         process_review_lane

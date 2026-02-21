@@ -2173,7 +2173,7 @@ extract_review_events_from_issue_comments() {
   local json_buffer=""
 
   while IFS= read -r line; do
-    if echo "$line" | grep -q '### Review Event JSON'; then
+    if echo "$line" | grep -qiE '^[[:space:]]*###?[[:space:]]*Review Event JSON[[:space:]]*$'; then
       in_event_section=1
       in_json_block=0
       json_buffer=""
@@ -2181,7 +2181,7 @@ extract_review_events_from_issue_comments() {
     fi
 
     if [ "$in_event_section" -eq 1 ]; then
-      if echo "$line" | grep -qE '^\s*```json\s*$'; then
+      if [ "$in_json_block" -eq 0 ] && echo "$line" | grep -qiE '^[[:space:]]*```([[:space:]]*json)?[[:space:]]*$'; then
         in_json_block=1
         json_buffer=""
         continue
@@ -2229,6 +2229,8 @@ verify_review_log_on_github() {
   local issue_number="$1"
   local scope_label="$2"
   local reviewed_commit="$3"
+  local scope_label_lc
+  scope_label_lc=$(printf '%s' "$scope_label" | tr '[:upper:]' '[:lower:]')
 
   local recent_comments
   recent_comments=$(gh issue view "$issue_number" --json comments \
@@ -2243,22 +2245,35 @@ verify_review_log_on_github() {
     [ -z "$raw_comment" ] && continue
     local c_body
     c_body=$(echo "$raw_comment" | jq -r '.body // ""' 2>/dev/null)
+    [ -n "$c_body" ] || continue
 
-    if echo "$c_body" | grep -q "## 🔎 Code Review: ${scope_label}"; then
-      local extracted
-      extracted=$(extract_review_events_from_issue_comments "$c_body" 2>/dev/null | head -1)
-      if [ -z "$extracted" ]; then
+    local extracted_events
+    extracted_events=$(extract_review_events_from_issue_comments "$c_body" 2>/dev/null || echo "")
+    [ -n "$extracted_events" ] || continue
+
+    while IFS= read -r extracted; do
+      [ -n "$extracted" ] || continue
+
+      local parent_task_id parent_task_id_lc extracted_scope extracted_scope_lc extracted_commit
+      parent_task_id=$(echo "$extracted" | jq -r '.parentTaskId // ""' 2>/dev/null)
+      extracted_scope=$(echo "$extracted" | jq -r '.scope // ""' 2>/dev/null)
+      extracted_commit=$(echo "$extracted" | jq -r '.reviewedCommit // ""' 2>/dev/null)
+
+      parent_task_id_lc=$(printf '%s' "$parent_task_id" | tr '[:upper:]' '[:lower:]')
+      extracted_scope_lc=$(printf '%s' "$extracted_scope" | tr '[:upper:]' '[:lower:]')
+
+      if [ -n "$scope_label" ] && \
+         [ "$parent_task_id_lc" != "$scope_label_lc" ] && \
+         [ "$extracted_scope_lc" != "$scope_label_lc" ]; then
         continue
       fi
 
-      local extracted_commit
-      extracted_commit=$(echo "$extracted" | jq -r '.reviewedCommit // ""' 2>/dev/null)
       if [ -n "$reviewed_commit" ] && [ "$reviewed_commit" != "$extracted_commit" ]; then
         continue
       fi
 
       review_event="$extracted"
-    fi
+    done <<< "$extracted_events"
   done <<< "$recent_comments"
 
   if [ -z "$review_event" ]; then
