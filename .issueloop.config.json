@@ -43,7 +43,7 @@
       "critical"
     ],
     "approvalRequiredSeverities": [
-      "high"
+      "critical"
     ],
     "minConfidenceForAutoEnqueue": 0.75,
     "maxFindingsPerReview": 5
@@ -78,7 +78,7 @@
       "fastGlobalVerifyCommands": [],
       "fullGlobalVerifyCommands": [],
       "fullRunEveryNPassedTasks": 3,
-      "runFullVerifyBeforeTestingCheckpoint": true,
+      "runFullVerifyBeforeTestingCheckpoint": false,
       "globalVerifyCommands": [],
       "securityVerifyCommands": [],
       "runSecurityVerifyOnEveryTask": false
@@ -126,8 +126,8 @@
     },
     "stalePlan": {
       "enabled": true,
-      "sameTaskRetryThreshold": 2,
-      "consecutiveRetryThreshold": 4
+      "sameTaskRetryThreshold": 3,
+      "consecutiveRetryThreshold": 6
     },
     "context": {
       "preferCompactedSummary": true,

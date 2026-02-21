@@ -64,10 +64,10 @@ This project is designed to be installed into other repositories. Installation w
 ### The /il_1_plan Flow
 When `/il_1_plan N` is run:
 1. **Evaluate** - Score issue 0-10 on completeness (What, Where, Why, Scope, Acceptance)
-2. **Scope** - If score < 8, ask 1-3 multiple-choice questions to gather requirements
-3. **Plan** - Enter native plan mode to design implementation
-4. **Approve** - Ask "Approve this plan?" then generate prd.json
-5. **Prompt** - Ask "Ready to implement?" to continue
+2. **Scope** - If score < 7, ask up to 3 multiple-choice questions to gather requirements
+3. **Plan** - Run custom 5-phase planning protocol with score-adaptive checkpoints
+4. **Approve + Start** - High-score issues use a combined approval/start checkpoint
+5. **Fallback** - Low-score issues keep full checkpoint flow
 
 Use `/il_1_plan N --quick` to skip to status check for issues already in progress.
 

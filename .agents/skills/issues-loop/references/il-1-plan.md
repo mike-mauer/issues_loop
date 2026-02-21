@@ -144,11 +144,12 @@ ACCEPTANCE (0-2):
 
 | Score | Action |
 |-------|--------|
-| **8-10** | Well-defined → Proceed to Step 4 (state detection) |
-| **5-7** | Minor gaps → Ask 1-2 targeted questions |
+| **9-10** | Well-defined → Skip scoping and use Fast Lane A (single checkpoint) |
+| **7-8** | Mostly defined → Skip scoping and use Fast Lane B (two checkpoints) |
+| **5-6** | Minor gaps → Ask 1 targeted question |
 | **0-4** | Needs scoping → Ask up to 3 questions |
 
-### Step 3b: Scoping Questions (if score < 8)
+### Step 3b: Scoping Questions (if score < 7)
 
 Prompt the user with multiple-choice options. Ask only about the gaps identified.
 
@@ -242,7 +243,7 @@ If user confirms, proceed to **Step 4: Planning Phase**.
 
 ### Step 4: Planning Phase
 
-When requirements are confirmed (or issue scored 8+), transition to planning.
+When requirements are confirmed (or issue scored 7+), transition to planning.
 
 **Follow the Custom Planning Protocol:** See `references/custom-planning-protocol.md` for the complete 5-phase planning system.
 
@@ -255,31 +256,31 @@ The formula detected in Step 2b guides the entire planning process:
 
 #### Protocol Overview
 
-Execute these phases in order, prompting the user at each checkpoint:
+Execute these phases in order, using score-adaptive checkpoints:
 
 ```
 Phase 1: EXPLORATION
 ├─ Analyze codebase (patterns, conventions, relevant files)
 ├─ Confirm formula detection (from Step 2b)
 ├─ Display Discovery Summary to user
-└─ Checkpoint: "Exploration complete. Ready to proceed?"
+└─ Checkpoint: Full Lane only
 
 Phase 2: TASK DECOMPOSITION
 ├─ Break into right-sized tasks (2-3 sentence rule)
 ├─ Define acceptance criteria + verify commands
 ├─ Show dependency graph
-└─ Checkpoint: "Task breakdown complete. Does this look right?"
+└─ Checkpoint: Full Lane + Fast Lane B
 
 Phase 3: DESIGN VALIDATION
 ├─ Validate all tasks are context-window-sized
 ├─ Check acceptance criteria are testable (not subjective)
 ├─ Verify commands exist/work
-└─ Checkpoint: "Validation complete. Ready to finalize?"
+└─ Checkpoint: Full Lane only
 
 Phase 4: GITHUB POSTING
 ├─ Post plan as `## 📋 Implementation Plan` comment
 ├─ Add "AI: Planning" label
-└─ Checkpoint: "Plan posted to GitHub. Approve?"
+└─ Checkpoint: Full Lane only
 
 Phase 5: PRD.JSON GENERATION
 ├─ Parse plan → generate prd.json
@@ -287,13 +288,18 @@ Phase 5: PRD.JSON GENERATION
 ├─ Commit and push prd.json
 ├─ Post `## ✅ Plan Approved` comment
 ├─ Update label to "AI: Approved"
-└─ Checkpoint: "prd.json generated. Ready to implement?"
+└─ Checkpoint: Full Lane prompt OR Fast Lane combined approval + start
 ```
+
+Checkpoint policy by score:
+- **Fast Lane A (9-10):** one prompt total - combined approval + start in Phase 5
+- **Fast Lane B (7-8):** two prompts - Phase 2 checkpoint + combined approval + start in Phase 5
+- **Full Lane (0-6):** all five checkpoints
 
 #### Key Rules
 
 1. **Do NOT use native plan mode tools** - Use the custom protocol instead
-2. **Prompt the user** at all checkpoints with multiple options
+2. **Prompt the user** according to score lane (Fast Lane A/B or Full Lane)
 3. **Follow the plan format** in `references/planning-guide.md`
 4. **Post to GitHub** at Phase 4 for persistence and visibility
 5. **Generate prd.json** at Phase 5 following the schema in `references/planning-guide.md`
@@ -444,13 +450,9 @@ Completeness: ████████░░ 9/10
 
 Looks good! This issue is well-defined.
 
-→ Ready to create an implementation plan?
-→ [User confirms]
-→ [Planning...]
-→ Plan ready - approve?
-→ [User approves]
+→ [Planning phases run with fast-lane prompts]
 → ✅ prd.json generated
-→ Ready to start implementation?
+→ Plan approved and branch ready. Start implementation now?
 ```
 
 ### Vague Issue (Score: 2/10)
@@ -506,5 +508,5 @@ Run il-2-implement to continue with US-002
 
 - `il-1-plan 42` - Load a new issue or re-scope an existing one
 - `il-1-plan 42 --quick` - Jump straight to status check for in-progress issues
-- The full flow: scope → plan → approve → implement
+- The flow is score-adaptive: fast lane for high-quality issues, full lane for ambiguous issues
 - Task logs in issue comments serve as memory between sessions

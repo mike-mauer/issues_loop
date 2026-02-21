@@ -86,8 +86,8 @@ il-1-plan 42 --quick  # Skip scoping, jump to status check
 2. **Fetch** — Loads issue details and existing comments
 3. **Formula detection** — Classifies as bugfix, feature, or refactor
 4. **Completeness evaluation** — Scores issue 0-10 on What/Where/Why/Scope/Acceptance
-5. **Scoping** — If score < 8, asks 1-3 multiple-choice questions
-6. **Planning** — 5-phase custom protocol (Exploration → Decomposition → Validation → GitHub Post → prd.json)
+5. **Scoping** — If score < 7, asks up to 3 multiple-choice questions (score-adaptive)
+6. **Planning** — 5-phase custom protocol with adaptive checkpoints (Fast Lane for high scores)
 7. **State detection** — Checks for existing branch, prd.json, or prior plan
 8. **Branch setup** — Creates `ai/issue-{N}-{slug}` branch
 

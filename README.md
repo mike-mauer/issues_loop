@@ -227,8 +227,9 @@ Each dimension scores 0-2 points (max 10). Based on score:
 
 | Score | Action |
 |-------|--------|
-| **8-10** | Well-defined → Proceed to planning |
-| **5-7** | Minor gaps → Ask 1-2 targeted questions |
+| **9-10** | Well-defined → Fast Lane A (single combined approval/start checkpoint) |
+| **7-8** | Mostly defined → Fast Lane B (task-breakdown checkpoint + combined approval/start) |
+| **5-6** | Minor gaps → Ask 1 targeted question |
 | **0-4** | Needs detail → Ask up to 3 questions |
 
 **Questions are multiple-choice** for quick answers, with "Other" option for custom input.
@@ -394,13 +395,13 @@ Key execution config (defaults):
     "taskSizing": {"enabled": true, "maxDescriptionSentences": 3, "maxAcceptanceCriteria": 10, "maxVerifyCommands": 6, "maxFiles": 12, "hardFailOnOversized": true},
     "contextManifest": {"enabled": true, "algorithm": "sha256", "enforceHashMatch": false},
     "eventEvidence": {"required": true},
-    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80, "fastGlobalVerifyCommands": [], "fullGlobalVerifyCommands": [], "fullRunEveryNPassedTasks": 3, "runFullVerifyBeforeTestingCheckpoint": true},
+    "verify": {"commandTimeoutSeconds": 600, "maxOutputLinesPerCommand": 80, "fastGlobalVerifyCommands": [], "fullGlobalVerifyCommands": [], "fullRunEveryNPassedTasks": 3, "runFullVerifyBeforeTestingCheckpoint": false},
     "searchEvidence": {"required": true, "minQueries": 2},
     "browserVerification": {"requiredForUiTasks": true, "hardFailWhenUnavailable": true, "allowedTools": ["playwright", "dev-browser"]},
     "placeholder": {"enabled": true, "semanticChecks": {"enabled": true, "blockTrivialConstantReturns": true, "blockAlwaysTrueFalseConditionals": true}},
     "replan": {"autoGenerateOnStale": true, "autoApplyIfSingleTask": true, "maxGeneratedTasks": 6},
     "testIntent": {"requiredWhenTestsChanged": true, "enforce": false},
-    "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 2, "consecutiveRetryThreshold": 4},
+    "stalePlan": {"enabled": true, "sameTaskRetryThreshold": 3, "consecutiveRetryThreshold": 6},
     "context": {"preferCompactedSummary": true, "maxTaskLogs": 8, "maxDiscoveryNotes": 6, "maxReviewLogs": 4}
   }
 }

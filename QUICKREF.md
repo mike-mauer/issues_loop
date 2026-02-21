@@ -34,8 +34,9 @@ When you load an issue, it's scored 0-10 on completeness:
 
 | Score | Action |
 |-------|--------|
-| 8-10 | Ready → proceed to `/plan` |
-| 5-7 | Ask 1-2 questions |
+| 9-10 | Fast Lane A → one combined approval/start checkpoint |
+| 7-8 | Fast Lane B → task-breakdown checkpoint + combined approval/start |
+| 5-6 | Ask 1 targeted question |
 | 0-4 | Ask up to 3 questions |
 
 **Dimensions scored:** What, Where, Why, Scope, Acceptance (2 pts each)
@@ -133,7 +134,7 @@ Later? → Pause, resume with /implement
 - UI tasks require browser verification event evidence.
 - Two-tier verify:
   - Fast tier: task `verifyCommands` + `execution.verify.fastGlobalVerifyCommands`.
-  - Full tier: `execution.verify.fullGlobalVerifyCommands` on cadence + before testing checkpoint.
+  - Full tier: `execution.verify.fullGlobalVerifyCommands` on cadence (+ optional testing-checkpoint gate when enabled).
 - `execution.gateMode`:
   - `enforce` (default): violations fail the task.
   - `warn`: log violations, continue if verify passes.
