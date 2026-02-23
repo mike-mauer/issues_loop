@@ -781,6 +781,14 @@ enqueuable=$(build_enqueuable_review_tasks "$TEST_DIR/prd-review.json")
 enqueuable_count=$(echo "$enqueuable" | jq 'length')
 assert_eq "$enqueuable_count" "1" "7d: Only critical findings above threshold are auto-enqueue candidates"
 
+jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical","high"]' \
+  "$TEST_DIR/prd-review.json" > "$TEST_DIR/prd-review.json.tmp" && mv "$TEST_DIR/prd-review.json.tmp" "$TEST_DIR/prd-review.json"
+enqueuable_with_high=$(build_enqueuable_review_tasks "$TEST_DIR/prd-review.json")
+enqueuable_with_high_count=$(echo "$enqueuable_with_high" | jq 'length')
+assert_eq "$enqueuable_with_high_count" "2" "7d2: High-severity findings are enqueuable without suggestedTask"
+jq '.quality.reviewPolicy.autoEnqueueSeverities = ["critical"]' \
+  "$TEST_DIR/prd-review.json" > "$TEST_DIR/prd-review.json.tmp" && mv "$TEST_DIR/prd-review.json.tmp" "$TEST_DIR/prd-review.json"
+
 enq_key=$(echo "$enqueuable" | jq -r '.[0].key')
 mark_enqueued_findings "$TEST_DIR/prd-review.json" "$(jq -nc --arg k "$enq_key" '[$k]')"
 

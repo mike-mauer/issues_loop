@@ -330,7 +330,7 @@ Output requirements:
 - Summary <= 80 words.
 - Max ${REVIEW_MAX_FINDINGS} findings, highest severity first.
 - Each finding MUST include: id, severity(critical|high|medium|low), confidence(0-1), category(adherence|efficiency|pattern_reuse|production_readiness|security), title, description, evidence(file+line).
-- Include suggestedTask ONLY for critical/high findings.
+- Include suggestedTask for critical/high findings whenever possible.
 - If no material risk: findings must be [].
 
 Return exactly:
@@ -480,17 +480,44 @@ process_review_lane() {
   while IFS= read -r finding; do
     [ -z "$finding" ] && continue
 
-    local finding_key parent_id parent_uid parent_priority suggested_task discovered_json key_json
+    local finding_key parent_id parent_uid parent_priority suggested_task discovered_json key_json finding_title finding_description
     finding_key=$(echo "$finding" | jq -r '.key // ""')
     parent_id=$(echo "$finding" | jq -r '.parentTaskId // ""')
     parent_uid=$(echo "$finding" | jq -r '.parentTaskUid // ""')
     suggested_task=$(echo "$finding" | jq -c '.suggestedTask // null')
+    finding_title=$(echo "$finding" | jq -r '.title // ""')
+    finding_description=$(echo "$finding" | jq -r '.description // ""')
 
     [ -n "$finding_key" ] || continue
-    [ "$suggested_task" != "null" ] || continue
 
-    # Fall back to the first existing story as parent if review finding has no parent.
-    if [ -z "$parent_id" ]; then
+    # Fall back to a generated task when the reviewer omits suggestedTask.
+    if [ "$suggested_task" = "null" ]; then
+      suggested_task=$(jq -nc \
+        --arg key "$finding_key" \
+        --arg finding_title "$finding_title" \
+        --arg finding_description "$finding_description" '
+        {
+          "title": (
+            if ($finding_title | length) > 0
+            then ("Address review finding: " + $finding_title)
+            else ("Address review finding " + $key)
+            end
+          ),
+          "description": (
+            if ($finding_description | length) > 0
+            then $finding_description
+            else "Address this review finding."
+            end
+          ),
+          "acceptanceCriteria": ["Review finding addressed"],
+          "verifyCommands": [],
+          "dependsOn": []
+        }
+      ')
+    fi
+
+    # Fall back to the first existing story if parent is missing or not a real task id.
+    if [ -z "$parent_id" ] || ! jq -e --arg id "$parent_id" '.userStories[]? | select(.id == $id)' "$PRD_FILE" >/dev/null 2>&1; then
       parent_id=$(jq -r '.userStories[0].id // "US-001"' "$PRD_FILE")
     fi
     if [ -z "$parent_uid" ] || [ "$parent_uid" = "null" ]; then
@@ -627,6 +654,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
         mark_final_review_status "$PRD_FILE" "running" "$HEAD_COMMIT" ""
         commit_prd_if_changed "chore: start final review gate (#$ISSUE_NUMBER)"
+        git push 2>/dev/null || true
 
         if ! spawn_task_review_agent "FINAL" "final" "FINAL" "final_review" "$HEAD_COMMIT" "{}" "sync"; then
           log "$ICON_WARN Final review invocation failed."
@@ -643,19 +671,6 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
           continue
         fi
 
-        # Inline GitHub posting: read the review output from the log file and post
-        # it as a GitHub comment. spawn_task_review_agent calls _post_review_to_github
-        # internally, but if the loop was started before that helper was defined (i.e.,
-        # the running bash process has an older in-memory function table), the internal
-        # call is a no-op. This inline fallback runs in the while-loop body, which bash
-        # re-reads from disk each iteration, so it always reflects the current code.
-        _fl_review_output=$(awk -v sentinel="--- Review output for FINAL ($HEAD_COMMIT) ---" '
-          $0 == sentinel { start=1; next }
-          /--- End review output ---/ { if (start) exit }
-          start { print }
-        ' "$REVIEW_LOG_FILE" 2>/dev/null || echo "")
-        _post_review_to_github "$_fl_review_output" "FINAL" >/dev/null 2>&1 || true
-
         FINAL_EVENT=""
         FINAL_VERIFY_ATTEMPT=1
         while [ "$FINAL_VERIFY_ATTEMPT" -le "$FINAL_REVIEW_VERIFY_RETRIES" ]; do
@@ -668,6 +683,30 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
           fi
           FINAL_VERIFY_ATTEMPT=$((FINAL_VERIFY_ATTEMPT + 1))
         done
+
+        # Fallback post: only post from the local review log if verification failed.
+        # This preserves compatibility with loops started before _post_review_to_github
+        # existed in the in-memory function table, while avoiding duplicate comments.
+        if [ -z "$FINAL_EVENT" ] || [ "$FINAL_EVENT" = "null" ]; then
+          _fl_review_output=$(awk -v sentinel="--- Review output for FINAL ($HEAD_COMMIT) ---" '
+            $0 == sentinel { start=1; next }
+            /--- End review output ---/ { if (start) exit }
+            start { print }
+          ' "$REVIEW_LOG_FILE" 2>/dev/null || echo "")
+          if _post_review_to_github "$_fl_review_output" "FINAL" >/dev/null 2>&1; then
+            FINAL_VERIFY_ATTEMPT=1
+            while [ "$FINAL_VERIFY_ATTEMPT" -le "$FINAL_REVIEW_VERIFY_RETRIES" ]; do
+              FINAL_EVENT=$(verify_review_log_on_github "$ISSUE_NUMBER" "FINAL" "$HEAD_COMMIT" 2>/dev/null || echo "")
+              if [ -n "$FINAL_EVENT" ] && [ "$FINAL_EVENT" != "null" ]; then
+                break
+              fi
+              if [ "$FINAL_VERIFY_ATTEMPT" -lt "$FINAL_REVIEW_VERIFY_RETRIES" ]; then
+                sleep "$FINAL_REVIEW_VERIFY_RETRY_SLEEP_SECONDS"
+              fi
+              FINAL_VERIFY_ATTEMPT=$((FINAL_VERIFY_ATTEMPT + 1))
+            done
+          fi
+        fi
 
         if [ -z "$FINAL_EVENT" ] || [ "$FINAL_EVENT" = "null" ]; then
           log "$ICON_WARN Final review event not verified on GitHub."
@@ -692,10 +731,22 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         REMAINING_AFTER_REVIEW=$(jq '[.userStories[] | select(.passes == false)] | length' "$PRD_FILE")
         BLOCKING_REVIEW_FINDINGS=$(count_open_blocking_review_findings "$PRD_FILE")
         if [ "$REMAINING_AFTER_REVIEW" -gt 0 ] || [ "$BLOCKING_REVIEW_FINDINGS" -gt 0 ]; then
+          if [ "$REMAINING_AFTER_REVIEW" -eq 0 ] && [ "$BLOCKING_REVIEW_FINDINGS" -gt 0 ]; then
+            ENQUEUABLE_BLOCKING_FINDINGS=$(build_enqueuable_review_tasks "$PRD_FILE" | jq -r 'length' 2>/dev/null || echo "0")
+            if [ "$ENQUEUABLE_BLOCKING_FINDINGS" -eq 0 ]; then
+              log "$ICON_BLOCKED Final review found blocking findings that cannot be auto-enqueued."
+              mark_final_review_status "$PRD_FILE" "failed" "$HEAD_COMMIT" "$FINAL_REVIEW_ID"
+              commit_prd_if_changed "chore: final review blocked - manual intervention required (#$ISSUE_NUMBER)"
+              gh issue edit "$ISSUE_NUMBER" --add-label "AI: Review" --add-label "AI: Blocked" 2>/dev/null || true
+              git push 2>/dev/null || true
+              exit 1
+            fi
+          fi
           log "$ICON_WARN Final review found blocking work. Continuing loop."
           mark_final_review_status "$PRD_FILE" "failed" "$HEAD_COMMIT" "$FINAL_REVIEW_ID"
           commit_prd_if_changed "chore: final review blocked testing (#$ISSUE_NUMBER)"
           gh issue edit "$ISSUE_NUMBER" --add-label "AI: Review" 2>/dev/null || true
+          git push 2>/dev/null || true
           continue
         fi
 

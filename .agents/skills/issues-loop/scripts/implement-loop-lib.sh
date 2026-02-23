@@ -2391,8 +2391,7 @@ build_enqueuable_review_tasks() {
       (.quality.findings // [])[] |
       select(.status == "open") |
       select((.severity // "" | ascii_downcase) as $sev | any($autoSev[]; ascii_downcase == $sev)) |
-      select((.confidence // 0) >= $minConf) |
-      select(.suggestedTask != null and (.suggestedTask.title // "") != "")
+      select((.confidence // 0) >= $minConf)
     ]
   ' "$prd_file" 2>/dev/null || echo "[]"
 }
